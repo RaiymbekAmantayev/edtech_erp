@@ -65,6 +65,23 @@ cd backend; go test ./...             # валидация, пользовате
 node tests/api-flow.mjs               # 32 сценарные проверки по API (запущенный API; меняет демо-данные)
 ```
 
+## Деплой (https://erp.bilim-shynyna-42-qadam.kz)
+
+GitHub Actions ([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)): на PR — `go vet`, `go test` (с PostgreSQL 16),
+lint и сборка фронтенда; на push в `master` — дополнительно выкладка на сервер через SSH пользователем `emp`.
+
+Сервер — AlmaLinux 8, общий с PHP-сайтом `bilim-shynyna-42-qadam.kz` (Apache + MariaDB), который не затрагивается:
+
+- PostgreSQL 16 на `localhost:5432`; API на `127.0.0.1:8080` и worker — systemd-сервисы `emp-api`, `emp-worker`.
+- Apache-vhost `/etc/httpd/conf.d/erp*.conf`: статика из `/var/www/erp/current`, `/api` и `/health` проксируются в API.
+  Сертификат Let's Encrypt продлевается штатным `certbot-renew.timer`.
+- Релизы — `/opt/emp/releases/<sha>`, `/opt/emp/current` → активный; секреты — `/opt/emp/shared/.env` (только на сервере).
+- [deploy/deploy.sh](deploy/deploy.sh) применяет миграции, переключает симлинки, перезапускает сервисы и при неудачной
+  проверке `/health` возвращает предыдущий релиз. Первичная настройка сервера — [deploy/server-setup.sh](deploy/server-setup.sh).
+
+Секреты репозитория: `DEPLOY_SSH_KEY` (приватный ключ для `emp`), `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`.
+Демо-данные на production не загружаются; при необходимости: `ssh emp@сервер 'cd /opt/emp/shared && ../current/migrate -seed'`.
+
 ## Что не входит в MVP (этапы roadmap)
 
 Канбан воронки и задачи менеджеров, документы и шаблоны договоров, WhatsApp/SMS и массовые рассылки, онлайн-оплата и

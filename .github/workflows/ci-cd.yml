@@ -1,0 +1,115 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go vet ./...
+      # роли и база для интеграционного теста RLS
+      - run: go run ./cmd/migrate -setup
+      - run: go test ./...
+      - name: Build linux binaries
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          for c in api worker migrate; do
+            go build -trimpath -ldflags="-s -w" -o ../dist/$c ./cmd/$c
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend
+          path: dist/
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: frontend/dist/
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://erp.bilim-shynyna-42-qadam.kz
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: release/web
+      - name: Package
+        run: |
+          chmod +x release/api release/worker release/migrate
+          cp deploy/deploy.sh release/
+          tar -czf release.tar.gz -C release .
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Upload and deploy
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          ID: ${{ github.sha }}
+        run: |
+          scp release.tar.gz emp@$HOST:/opt/emp/releases/$ID.tar.gz
+          ssh emp@$HOST "set -e; mkdir -p /opt/emp/releases/$ID && tar -xzf /opt/emp/releases/$ID.tar.gz -C /opt/emp/releases/$ID && bash /opt/emp/releases/$ID/deploy.sh $ID"
+      - name: Smoke test
+        run: curl -fsS --retry 5 --retry-delay 3 https://erp.bilim-shynyna-42-qadam.kz/health
