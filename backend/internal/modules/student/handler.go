@@ -20,7 +20,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type Handler struct{ DB *database.DB }
+type Handler struct {
+	DB      *database.DB
+	BotName string
+}
 
 var Statuses = []string{"registration", "active", "frozen", "graduated", "inactive", "archived"}
 
@@ -413,8 +416,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 			var tg, payer, legal bool
 			var consent *time.Time
 			prow.Scan(&pid, &name, &phone, &email, &tg, &code, &rel, &payer, &legal, &consent)
+			var link *string
+			if code != nil {
+				l := "https://t.me/" + h.BotName + "?start=" + *code
+				link = &l
+			}
 			parents = append(parents, map[string]any{"id": pid, "full_name": name, "phone": phone, "email": email, "telegram_linked": tg,
-				"telegram_link_code": code, "relation": rel, "is_payer": payer, "is_legal_rep": legal, "consent_at": consent})
+				"telegram_link_code": code, "telegram_link": link, "relation": rel, "is_payer": payer, "is_legal_rep": legal, "consent_at": consent})
 		}
 		prow.Close()
 		out["parents"] = parents

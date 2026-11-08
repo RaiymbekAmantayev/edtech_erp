@@ -86,7 +86,7 @@ func main() {
 				r.Use(mw.TenantUser)
 				(&branch.Handler{DB: db}).Routes(r)
 				(&customfield.Handler{DB: db}).Routes(r)
-				(&student.Handler{DB: db}).Routes(r)
+				(&student.Handler{DB: db, BotName: cfg.TelegramBotName}).Routes(r)
 				(&parent.Handler{DB: db, BotName: cfg.TelegramBotName}).Routes(r)
 				(&employee.Handler{DB: db}).Routes(r)
 				(&group.Handler{DB: db}).Routes(r)

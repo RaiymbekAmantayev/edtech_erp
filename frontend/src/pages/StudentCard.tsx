@@ -13,7 +13,7 @@ import { Dropdown, MenuItem } from '../components/Layout'
 import { PaymentModal } from './finance/PaymentModal'
 import { FreezeModal, SubscriptionModal } from './finance/SubscriptionModals'
 
-type Parent = { id: string; full_name: string; phone: string | null; email: string | null; telegram_linked: boolean; telegram_link_code: string | null; relation: string; is_payer: boolean; is_legal_rep: boolean; consent_at: string | null }
+type Parent = { id: string; full_name: string; phone: string | null; email: string | null; telegram_linked: boolean; telegram_link_code: string | null; telegram_link: string | null; relation: string; is_payer: boolean; is_legal_rep: boolean; consent_at: string | null }
 type Card = {
   student: StudentRow
   details: { gender: string | null; address: string | null; comment: string | null; responsible_id: string | null; responsible_name: string | null; version: number; started_at: string | null; branch_name: string }
@@ -172,8 +172,8 @@ export default function StudentCard() {
                       <div className="text-sm font-medium">{p.full_name} · {relationText[p.relation] ?? p.relation}</div>
                       <div className="text-[13px] text-muted">{phone(p.phone)}{p.is_payer && ' · плательщик'}{p.is_legal_rep && ' · законный представитель'}{!p.consent_at && ' · нет согласия на обработку ПД'}</div>
                     </div>
-                    {p.telegram_linked ? <Badge tone="blue">Telegram привязан</Badge> : p.telegram_link_code && (
-                      <Button size="sm" onClick={() => { navigator.clipboard?.writeText(`https://t.me/emp_center_bot?start=${p.telegram_link_code}`); setToast('Ссылка на бота скопирована — отправьте её родителю') }}>Отправить ссылку на бота</Button>
+                    {p.telegram_linked ? <Badge tone="blue">Telegram привязан</Badge> : p.telegram_link && (
+                      <Button size="sm" onClick={() => { navigator.clipboard?.writeText(p.telegram_link ?? '');setToast('Ссылка на бота скопирована — отправьте её родителю') }}>Отправить ссылку на бота</Button>
                     )}
                   </li>
                 ))}
