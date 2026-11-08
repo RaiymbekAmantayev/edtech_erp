@@ -1,6 +1,7 @@
 package parent
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"emp/internal/platform/database"
 	"emp/internal/platform/httpx"
 	mw "emp/internal/platform/middleware"
+	"emp/internal/platform/telegram"
 	"emp/internal/platform/validate"
 
 	"github.com/go-chi/chi/v5"
@@ -35,6 +37,7 @@ type dto struct {
 	FullName         string          `json:"full_name"`
 	Phone            *string         `json:"phone"`
 	Email            *string         `json:"email"`
+	IIN              *string         `json:"iin"`
 	TelegramLinked   bool            `json:"telegram_linked"`
 	TelegramLink     string          `json:"telegram_link,omitempty"`
 	PreferredChannel string          `json:"preferred_channel"`
@@ -45,22 +48,27 @@ type dto struct {
 	Students         json.RawMessage `json:"students"`
 }
 
-const sel = `SELECT p.id, p.full_name, p.phone, p.email, p.telegram_chat_id IS NOT NULL, p.telegram_link_code, p.preferred_channel, p.locale, p.consent_at, p.comment, p.custom_fields,
+const sel = `SELECT p.id, p.full_name, p.phone, p.email, p.iin, p.telegram_chat_id IS NOT NULL, p.telegram_link_code, p.preferred_channel, p.locale, p.consent_at, p.comment, p.custom_fields,
 	(SELECT coalesce(json_agg(json_build_object('id', s.id, 'full_name', s.full_name, 'relation', sp.relation, 'is_payer', sp.is_payer, 'is_legal_rep', sp.is_legal_rep, 'status', s.status)), '[]')
 	 FROM student_parents sp JOIN students s ON s.id = sp.student_id WHERE sp.parent_id = p.id)
 	FROM parents p`
 
-func (h *Handler) scan(rows pgx.Rows) ([]dto, error) {
+// scan: bot — бот школы для ссылок-приглашений; ИИН виден только с правом students.view_iin.
+func (h *Handler) scan(rows pgx.Rows, bot string, p *auth.Principal) ([]dto, error) {
 	defer rows.Close()
 	out := []dto{}
 	for rows.Next() {
 		var d dto
 		var code *string
-		if err := rows.Scan(&d.ID, &d.FullName, &d.Phone, &d.Email, &d.TelegramLinked, &code, &d.PreferredChannel, &d.Locale, &d.ConsentAt, &d.Comment, &d.CustomFields, &d.Students); err != nil {
+		if err := rows.Scan(&d.ID, &d.FullName, &d.Phone, &d.Email, &d.IIN, &d.TelegramLinked, &code, &d.PreferredChannel, &d.Locale, &d.ConsentAt, &d.Comment, &d.CustomFields, &d.Students); err != nil {
 			return nil, err
 		}
 		if code != nil && !d.TelegramLinked {
-			d.TelegramLink = "https://t.me/" + h.BotName + "?start=" + *code
+			d.TelegramLink = "https://t.me/" + bot + "?start=" + *code
+		}
+		if d.IIN != nil && !p.Can("students.view_iin") {
+			m := validate.MaskIIN(*d.IIN)
+			d.IIN = &m
 		}
 		out = append(out, d)
 	}
@@ -92,11 +100,12 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 		where := " WHERE " + strings.Join(conds, " AND ")
 		tx.QueryRow(r.Context(), "SELECT count(*) FROM parents p"+where, args...).Scan(&total)
 		args = append(args, limit, offset)
+		bot := telegram.Username(r.Context(), tx, h.BotName)
 		rows, err := tx.Query(r.Context(), sel+where+" ORDER BY p.full_name LIMIT $"+strconv.Itoa(len(args)-1)+" OFFSET $"+strconv.Itoa(len(args)), args...)
 		if err != nil {
 			return err
 		}
-		out, err = h.scan(rows)
+		out, err = h.scan(rows, bot, p)
 		for i := range out {
 			out[i].CustomFields = customfield.Strip(fields, out[i].CustomFields, p, true)
 		}
@@ -116,11 +125,12 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		bot := telegram.Username(r.Context(), tx, h.BotName)
 		rows, err := tx.Query(r.Context(), sel+" WHERE p.id=$1", chi.URLParam(r, "id"))
 		if err != nil {
 			return err
 		}
-		list, err := h.scan(rows)
+		list, err := h.scan(rows, bot, p)
 		if err != nil {
 			return err
 		}
@@ -141,6 +151,7 @@ type input struct {
 	FullName         *string        `json:"full_name"`
 	Phone            *string        `json:"phone"`
 	Email            *string        `json:"email"`
+	IIN              *string        `json:"iin"`
 	PreferredChannel *string        `json:"preferred_channel"`
 	Locale           *string        `json:"locale"`
 	Comment          *string        `json:"comment"`
@@ -162,6 +173,26 @@ func (in *input) validate(v *httpx.Validation) {
 	if in.Email != nil && !validate.Email(strings.TrimSpace(*in.Email)) {
 		v.Add("email", "INVALID_FORMAT")
 	}
+	if in.IIN != nil {
+		iin := strings.TrimSpace(*in.IIN)
+		if iin != "" && !validate.IIN(iin) {
+			v.Add("iin", "INVALID_IIN")
+		}
+		in.IIN = &iin
+	}
+}
+
+// iinTaken — ИИН родителя — логин в кабинет, поэтому он уникален в пределах центра.
+func iinTaken(ctx context.Context, tx pgx.Tx, iin *string, exceptID string) error {
+	if iin == nil || *iin == "" {
+		return nil
+	}
+	var taken bool
+	tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM parents WHERE iin=$1 AND id::text<>$2 AND archived_at IS NULL)`, *iin, exceptID).Scan(&taken)
+	if taken {
+		return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "iin", Code: "NOT_UNIQUE"}}}).Err()
+	}
+	return nil
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
@@ -189,14 +220,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		b, _ := json.Marshal(cf)
+		if err := iinTaken(r.Context(), tx, in.IIN, ""); err != nil {
+			return err
+		}
 		var consent *time.Time
 		if in.Consent != nil && *in.Consent {
 			t := time.Now()
 			consent = &t
 		}
-		if err := tx.QueryRow(r.Context(), `INSERT INTO parents (tenant_id, full_name, phone, whatsapp, email, comment, custom_fields, telegram_link_code, consent_at, consent_method, consent_version)
-			VALUES (app_current_tenant(), $1, NULLIF($2,''), NULLIF($2,''), $3, $4, $5, $6, $7, CASE WHEN $7::timestamptz IS NOT NULL THEN 'form' END, CASE WHEN $7::timestamptz IS NOT NULL THEN 'v1' END) RETURNING id`,
-			strings.TrimSpace(*in.FullName), deref(in.Phone), httpx.Ptr(deref(in.Email)), httpx.Ptr(deref(in.Comment)), b, auth.RandomCode(16), consent).Scan(&id); err != nil {
+		if err := tx.QueryRow(r.Context(), `INSERT INTO parents (tenant_id, full_name, phone, whatsapp, email, comment, custom_fields, telegram_link_code, consent_at, consent_method, consent_version, iin)
+			VALUES (app_current_tenant(), $1, NULLIF($2,''), NULLIF($2,''), $3, $4, $5, $6, $7, CASE WHEN $7::timestamptz IS NOT NULL THEN 'form' END, CASE WHEN $7::timestamptz IS NOT NULL THEN 'v1' END, NULLIF($8,'')) RETURNING id`,
+			strings.TrimSpace(*in.FullName), deref(in.Phone), httpx.Ptr(deref(in.Email)), httpx.Ptr(deref(in.Comment)), b, auth.RandomCode(16), consent, deref(in.IIN)).Scan(&id); err != nil {
 			return err
 		}
 		return database.Audit(r.Context(), tx, "parent", id, "create", nil, map[string]any{"full_name": *in.FullName})
@@ -246,6 +280,19 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) error {
 		if in.Email != nil {
 			tx.Exec(ctx, `UPDATE parents SET email=NULLIF($2,'') WHERE id=$1`, id, strings.TrimSpace(*in.Email))
 		}
+		if in.IIN != nil {
+			if !p.Can("students.view_iin") {
+				return httpx.Forbidden()
+			}
+			if err := iinTaken(ctx, tx, in.IIN, id); err != nil {
+				return err
+			}
+			// смена ИИН меняет логин кабинета: старая учётная запись родителя закрывается
+			if _, err := tx.Exec(ctx, `UPDATE parents SET iin=NULLIF($2,'') WHERE id=$1 AND iin IS DISTINCT FROM NULLIF($2,'')`, id, *in.IIN); err != nil {
+				return err
+			}
+			tx.Exec(ctx, `DELETE FROM portal_accounts WHERE parent_id=$1 AND iin<>$2`, id, *in.IIN)
+		}
 		if in.PreferredChannel != nil {
 			tx.Exec(ctx, `UPDATE parents SET preferred_channel=$2 WHERE id=$1`, id, *in.PreferredChannel)
 		}
@@ -258,7 +305,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) error {
 		if in.Consent != nil && *in.Consent {
 			tx.Exec(ctx, `UPDATE parents SET consent_at=COALESCE(consent_at, NOW()), consent_method=COALESCE(consent_method,'manual'), consent_version=COALESCE(consent_version,'v1') WHERE id=$1`, id)
 		}
-		return database.Audit(ctx, tx, "parent", id, "update", nil, in)
+		audit := in
+		if audit.IIN != nil {
+			m := validate.MaskIIN(*audit.IIN)
+			audit.IIN = &m
+		}
+		return database.Audit(ctx, tx, "parent", id, "update", nil, audit)
 	})
 }
 

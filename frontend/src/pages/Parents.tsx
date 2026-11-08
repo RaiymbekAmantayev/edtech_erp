@@ -9,7 +9,7 @@ import type { CField } from '../lib/types'
 import { Badge, Button, Card, Checkbox, Drawer, Field, Input, Select, Spinner, Table, Toast } from '../components/ui'
 import { CFInput, cfDisplay } from '../components/CustomFields'
 
-type P = { id: string; full_name: string; phone: string | null; email: string | null; telegram_linked: boolean; telegram_link?: string; preferred_channel: string; locale: string; consent_at: string | null; comment: string | null; custom_fields: Record<string, unknown>; students: { id: string; full_name: string; relation: string; is_payer: boolean; status: string }[] }
+type P = { id: string; full_name: string; phone: string | null; email: string | null; iin: string | null; telegram_linked: boolean; telegram_link?: string; preferred_channel: string; locale: string; consent_at: string | null; comment: string | null; custom_fields: Record<string, unknown>; students: { id: string; full_name: string; relation: string; is_payer: boolean; status: string }[] }
 
 export default function Parents() {
   const [params, setParams] = useSearchParams()
@@ -61,6 +61,7 @@ function ParentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           <dl className="grid grid-cols-2 gap-4">
             <div><dt className="text-muted">Телефон</dt><dd>{phone(p.phone) || '—'}</dd></div>
             <div><dt className="text-muted">Email</dt><dd>{p.email || '—'}</dd></div>
+            <div><dt className="text-muted">ИИН (вход в кабинет)</dt><dd className="tabular">{p.iin || '—'}</dd></div>
             <div><dt className="text-muted">Предпочтительный канал</dt><dd>{p.preferred_channel}</dd></div>
             <div><dt className="text-muted">Язык уведомлений</dt><dd>{{ ru: 'Русский', kk: 'Қазақша', en: 'English' }[p.locale]}</dd></div>
             <div><dt className="text-muted">Согласие на обработку ПД</dt><dd>{p.consent_at ? date(p.consent_at) : 'не получено'}</dd></div>
@@ -71,13 +72,18 @@ function ParentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             <div className="mb-2 font-semibold">Дети</div>
             {p.students.map((s) => <Link key={s.id} to={`/students/${s.id}`} className="block py-1 text-brand-600 hover:underline">{s.full_name}{s.is_payer && ' · плательщик'}</Link>)}
           </div>
-          {can('parents.edit') && <Button onClick={() => setEdit({ full_name: p.full_name, phone: p.phone ?? '', email: p.email ?? '', preferred_channel: p.preferred_channel, locale: p.locale, custom_fields: { ...p.custom_fields } })}>Редактировать</Button>}
+          {can('parents.edit') && <Button onClick={() => setEdit({ full_name: p.full_name, phone: p.phone ?? '', email: p.email ?? '', ...(can('students.view_iin') ? { iin: p.iin ?? '' } : {}), preferred_channel: p.preferred_channel, locale: p.locale, custom_fields: { ...p.custom_fields } })}>Редактировать</Button>}
         </div>
       ) : (
         <div className="space-y-4">
           <Field label="ФИО" error={errors.full_name}><Input value={edit.full_name as string} onChange={(e) => setEdit({ ...edit, full_name: e.target.value })} /></Field>
           <Field label="Телефон" error={errors.phone}><Input value={edit.phone as string} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
           <Field label="Email" error={errors.email}><Input value={edit.email as string} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></Field>
+          {'iin' in edit && (
+            <Field label="ИИН" error={errors.iin} hint="Логин родителя в личный кабинет; пароль при первом входе — 12345">
+              <Input inputMode="numeric" maxLength={12} value={edit.iin as string} onChange={(e) => setEdit({ ...edit, iin: e.target.value.replace(/\D/g, '') })} />
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Канал"><Select value={edit.preferred_channel as string} onChange={(e) => setEdit({ ...edit, preferred_channel: e.target.value })}><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></Select></Field>
             <Field label="Язык"><Select value={edit.locale as string} onChange={(e) => setEdit({ ...edit, locale: e.target.value })}><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option></Select></Field>

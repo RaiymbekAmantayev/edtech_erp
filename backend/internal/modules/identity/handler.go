@@ -2,14 +2,9 @@ package identity
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
-	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +22,6 @@ import (
 type Handler struct {
 	DB           *database.DB
 	Secret       string
-	BotToken     string
 	CookieSecure bool
 }
 
@@ -36,7 +30,6 @@ const refreshCookie = "emp_refresh"
 func (h *Handler) PublicRoutes(r chi.Router) {
 	r.With(middleware.RateLimit(20, time.Minute)).Post("/auth/login", httpx.Handler(h.login).ServeHTTP)
 	r.With(middleware.RateLimit(10, time.Minute)).Post("/auth/register", httpx.Handler(h.register).ServeHTTP)
-	r.With(middleware.RateLimit(20, time.Minute)).Post("/auth/telegram", httpx.Handler(h.telegram).ServeHTTP)
 	r.Post("/auth/refresh", httpx.Handler(h.refresh).ServeHTTP)
 	r.Post("/auth/logout", httpx.Handler(h.logout).ServeHTTP)
 }
@@ -204,76 +197,14 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) error {
 	return h.issue(w, r, id, tid, platform)
 }
 
-// telegram — вход через Telegram Mini App: подпись initData проверяется на сервере (ТЗ 20.1).
-func (h *Handler) telegram(w http.ResponseWriter, r *http.Request) error {
-	var req struct {
-		InitData string `json:"init_data"`
-	}
-	if err := httpx.Decode(r, &req); err != nil {
-		return err
-	}
-	if h.BotToken == "" {
-		return httpx.BadRequest("TELEGRAM_DISABLED", "Telegram-бот не настроен")
-	}
-	tgID, err := VerifyInitData(req.InitData, h.BotToken, 24*time.Hour)
-	if err != nil {
-		return httpx.NewError(401, "TELEGRAM_INVALID", "Подпись Telegram не прошла проверку")
-	}
-	var id string
-	var tenantID *string
-	var platform bool
-	if err := h.DB.Sys.QueryRow(r.Context(), `SELECT id, tenant_id::text, is_platform_admin FROM users WHERE telegram_id=$1 AND status='active'`, tgID).
-		Scan(&id, &tenantID, &platform); err != nil {
-		return httpx.NewError(401, "TELEGRAM_NOT_LINKED", "Telegram-аккаунт не привязан к пользователю")
-	}
-	tid := ""
-	if tenantID != nil {
-		tid = *tenantID
-	}
-	return h.issue(w, r, id, tid, platform)
-}
-
-// VerifyInitData проверяет подпись Telegram WebApp initData и возвращает user.id.
-func VerifyInitData(initData, botToken string, maxAge time.Duration) (int64, error) {
-	vals, err := url.ParseQuery(initData)
-	if err != nil {
-		return 0, err
-	}
-	hash := vals.Get("hash")
-	vals.Del("hash")
-	keys := make([]string, 0, len(vals))
-	for k := range vals {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = k + "=" + vals.Get(k)
-	}
-	secret := hmac.New(sha256.New, []byte("WebAppData"))
-	secret.Write([]byte(botToken))
-	mac := hmac.New(sha256.New, secret.Sum(nil))
-	mac.Write([]byte(strings.Join(parts, "\n")))
-	if !hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(hash)) {
-		return 0, errors.New("bad hash")
-	}
-	authDate, _ := strconv.ParseInt(vals.Get("auth_date"), 10, 64)
-	if time.Since(time.Unix(authDate, 0)) > maxAge {
-		return 0, errors.New("expired")
-	}
-	user := vals.Get("user")
-	i := strings.Index(user, `"id":`)
-	if i < 0 {
-		return 0, errors.New("no user")
-	}
-	rest := user[i+5:]
-	end := strings.IndexAny(rest, ",}")
-	return strconv.ParseInt(strings.TrimSpace(rest[:end]), 10, 64)
+// IssueSession выдаёт сессию сотрудника (используется входом через Mini App).
+func (h *Handler) IssueSession(w http.ResponseWriter, r *http.Request, userID, tenantID string, extra map[string]any) error {
+	return h.issue(w, r, userID, tenantID, false, extra)
 }
 
 // ---------------------------------------------------------------- токены
 
-func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID, tenantID string, platform bool) error {
+func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID, tenantID string, platform bool, extra ...map[string]any) error {
 	access, err := auth.IssueAccess(h.Secret, userID, tenantID, platform)
 	if err != nil {
 		return err
@@ -284,7 +215,13 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID, tenantID
 		return err
 	}
 	h.setCookie(w, refresh, auth.RefreshTTL)
-	return httpx.OK(w, map[string]any{"access_token": access, "expires_in": int(auth.AccessTTL.Seconds())})
+	out := map[string]any{"access_token": access, "expires_in": int(auth.AccessTTL.Seconds())}
+	for _, e := range extra {
+		for k, v := range e {
+			out[k] = v
+		}
+	}
+	return httpx.OK(w, out)
 }
 
 func (h *Handler) setCookie(w http.ResponseWriter, value string, ttl time.Duration) {

@@ -20,6 +20,7 @@ import (
 	"emp/internal/modules/lead"
 	"emp/internal/modules/parent"
 	"emp/internal/modules/platform"
+	"emp/internal/modules/portal"
 	"emp/internal/modules/reporting"
 	"emp/internal/modules/schedule"
 	"emp/internal/modules/student"
@@ -28,6 +29,7 @@ import (
 	"emp/internal/platform/database"
 	"emp/internal/platform/httpx"
 	mw "emp/internal/platform/middleware"
+	"emp/internal/platform/telegram"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -66,10 +68,14 @@ func main() {
 	})
 
 	authn := &mw.Authenticator{DB: db, Secret: cfg.JWTSecret}
-	idh := &identity.Handler{DB: db, Secret: cfg.JWTSecret, BotToken: cfg.TelegramBotToken, CookieSecure: cfg.CookieSecure}
+	idh := &identity.Handler{DB: db, Secret: cfg.JWTSecret, CookieSecure: cfg.CookieSecure}
+	bots := telegram.Platform{Token: cfg.TelegramBotToken, Username: cfg.TelegramBotName}
+	cabinet := &portal.Handler{DB: db, Secret: cfg.JWTSecret, Platform: bots, PublicURL: cfg.PublicURL, Staff: idh}
 
 	r.Route("/api/v1", func(r chi.Router) {
 		idh.PublicRoutes(r)
+		// личный кабинет (Telegram Mini App): вход по ИИН или через Telegram
+		cabinet.PublicRoutes(r)
 		// приём заявок с сайта: tenant определяется по публичному ключу формы
 		r.With(mw.RateLimit(30, time.Minute)).Post("/public/{tenantID}/leads", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			return lead.PublicForm(w, r, db)
@@ -95,6 +101,7 @@ func main() {
 				(&finance.Handler{DB: db}).Routes(r)
 				(&lead.Handler{DB: db}).Routes(r)
 				(&reporting.Handler{DB: db}).Routes(r)
+				cabinet.StaffRoutes(r)
 			})
 		})
 	})

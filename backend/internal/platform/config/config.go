@@ -15,6 +15,7 @@ type Config struct {
 	TelegramBotToken string
 	TelegramBotName  string
 	CookieSecure     bool
+	PublicURL        string // адрес веб-интерфейса — для ссылок на Mini App
 }
 
 // Load читает .env (если есть) и переменные окружения. Переменные окружения имеют приоритет.
@@ -29,6 +30,7 @@ func Load() Config {
 		TelegramBotToken: get("TELEGRAM_BOT_TOKEN", ""),
 		TelegramBotName:  get("TELEGRAM_BOT_NAME", "emp_center_bot"),
 		CookieSecure:     get("COOKIE_SECURE", "false") == "true",
+		PublicURL:        get("PUBLIC_URL", "http://localhost:5173"),
 	}
 }
 

@@ -2,34 +2,35 @@
 package notification
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"emp/internal/modules/schedule"
 	"emp/internal/platform/database"
+	"emp/internal/platform/telegram"
 
 	"github.com/jackc/pgx/v5"
 )
 
 type Worker struct {
-	DB       *database.DB
-	BotToken string
-	client   *http.Client
+	DB        *database.DB
+	BotToken  string // общий бот платформы — для школ без своего бота
+	PublicURL string // адрес веб-интерфейса — кнопка «Открыть кабинет»
+
+	mu      sync.Mutex
+	bots    map[int64]bot                 // активные боты по ID
+	pollers map[string]context.CancelFunc // опрос getUpdates по токену
 }
 
 func (w *Worker) Run(ctx context.Context) {
-	w.client = &http.Client{Timeout: 40 * time.Second}
-	slog.Info("worker started", "telegram", w.BotToken != "")
-	if w.BotToken != "" {
-		go w.pollTelegram(ctx)
-	}
+	w.reloadBots(ctx)
+	slog.Info("worker started", "telegram_bots", len(w.bots))
+	go w.every(ctx, 30*time.Second, "telegram bots", func(ctx context.Context) error { w.reloadBots(ctx); return nil })
 	go w.every(ctx, time.Hour, "schedule horizon", w.extendSchedules)
 	go w.every(ctx, time.Hour, "subscription statuses", w.subscriptionStatuses)
 	tick := time.NewTicker(2 * time.Second)
@@ -149,6 +150,7 @@ func (w *Worker) processOutbox(ctx context.Context) error {
 type recipient struct {
 	ParentID, Name string
 	ChatID         *int64
+	BotID          *int64
 	Locale         string
 }
 
@@ -224,7 +226,10 @@ func (w *Worker) handle(ctx context.Context, e event) error {
 	if inQuiet(time.Now().In(loc), quiet) {
 		return errQuiet
 	}
-	rows, err := w.DB.Sys.Query(ctx, `SELECT DISTINCT p.id, p.full_name, p.telegram_chat_id, p.locale FROM student_parents sp JOIN parents p ON p.id=sp.parent_id
+	if !w.notifyEnabled(ctx, e.TenantID, e.Type) {
+		return nil // тип уведомлений выключен в настройках бота школы
+	}
+	rows, err := w.DB.Sys.Query(ctx, `SELECT DISTINCT p.id, p.full_name, p.telegram_chat_id, p.telegram_bot_id, p.locale FROM student_parents sp JOIN parents p ON p.id=sp.parent_id
 		WHERE sp.student_id = ANY($1::uuid[]) AND p.archived_at IS NULL`, studentIDs)
 	if err != nil {
 		return err
@@ -232,7 +237,7 @@ func (w *Worker) handle(ctx context.Context, e event) error {
 	var recs []recipient
 	for rows.Next() {
 		var r recipient
-		rows.Scan(&r.ParentID, &r.Name, &r.ChatID, &r.Locale)
+		rows.Scan(&r.ParentID, &r.Name, &r.ChatID, &r.BotID, &r.Locale)
 		recs = append(recs, r)
 	}
 	rows.Close()
@@ -248,13 +253,19 @@ func (w *Worker) handle(ctx context.Context, e event) error {
 			w.log(ctx, e, &r.ParentID, "telegram", text, "skipped", "Telegram не привязан")
 			continue
 		}
-		if w.BotToken == "" {
-			w.log(ctx, e, &r.ParentID, "telegram", text, "skipped", "TELEGRAM_BOT_TOKEN не задан")
+		// chat_id действителен только для бота, через которого родитель привязался
+		b, ok := w.botFor(r.BotID)
+		if !ok {
+			w.log(ctx, e, &r.ParentID, "telegram", text, "skipped", "Бот, через которого привязан Telegram, отключён")
 			continue
 		}
-		if err := w.send(ctx, *r.ChatID, text); err != nil {
+		if err := w.send(ctx, b.Token, *r.ChatID, text, nil); err != nil {
+			if errors.Is(err, telegram.ErrNetwork) {
+				return err // Telegram недоступен — повторная попытка позже
+			}
+			// чат не найден, бот заблокирован и т.п. — повтор не поможет, остальным родителям отправляем
 			w.log(ctx, e, &r.ParentID, "telegram", text, "failed", err.Error())
-			return err // повторная попытка позже
+			continue
 		}
 		w.log(ctx, e, &r.ParentID, "telegram", text, "sent", "")
 	}
@@ -299,75 +310,3 @@ func Money(tiyn int64) string {
 	return out
 }
 
-// ---------------------------------------------------------------- Telegram
-
-func (w *Worker) api(ctx context.Context, method string, body any, out any) error {
-	b, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.telegram.org/bot"+w.BotToken+"/"+method, bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := w.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	var res struct {
-		OK          bool            `json:"ok"`
-		Description string          `json:"description"`
-		Result      json.RawMessage `json:"result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return err
-	}
-	if !res.OK {
-		return errors.New(res.Description)
-	}
-	if out != nil {
-		return json.Unmarshal(res.Result, out)
-	}
-	return nil
-}
-
-func (w *Worker) send(ctx context.Context, chatID int64, text string) error {
-	return w.api(ctx, "sendMessage", map[string]any{"chat_id": chatID, "text": text}, nil)
-}
-
-// pollTelegram — long polling: /start <код> привязывает родителя к чату (Telegram ID заполняется только через бота).
-func (w *Worker) pollTelegram(ctx context.Context) {
-	offset := int64(0)
-	for ctx.Err() == nil {
-		var updates []struct {
-			UpdateID int64 `json:"update_id"`
-			Message  *struct {
-				Text string `json:"text"`
-				Chat struct {
-					ID int64 `json:"id"`
-				} `json:"chat"`
-			} `json:"message"`
-		}
-		if err := w.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 30}, &updates); err != nil {
-			slog.Warn("telegram getUpdates", "err", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		for _, u := range updates {
-			offset = u.UpdateID + 1
-			if u.Message == nil {
-				continue
-			}
-			code, ok := strings.CutPrefix(strings.TrimSpace(u.Message.Text), "/start ")
-			if !ok {
-				w.send(ctx, u.Message.Chat.ID, "Здравствуйте! Чтобы получать уведомления, откройте ссылку-приглашение от учебного центра.")
-				continue
-			}
-			var name, tenantID string
-			err := w.DB.Sys.QueryRow(ctx, `UPDATE parents SET telegram_chat_id=$2, preferred_channel='telegram' WHERE telegram_link_code=$1 RETURNING full_name, tenant_id`,
-				strings.TrimSpace(code), u.Message.Chat.ID).Scan(&name, &tenantID)
-			if err != nil {
-				w.send(ctx, u.Message.Chat.ID, "Ссылка недействительна. Попросите администратора центра отправить новую.")
-				continue
-			}
-			w.DB.Sys.Exec(ctx, `INSERT INTO audit_logs (tenant_id, entity_type, action, new_values) VALUES ($1,'parent','telegram_linked',$2)`, tenantID, map[string]any{"chat": "linked"})
-			w.send(ctx, u.Message.Chat.ID, "Готово, "+name+"! Вы будете получать уведомления о посещаемости, расписании и оплатах.")
-		}
-	}
-}

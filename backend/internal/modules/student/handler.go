@@ -14,6 +14,7 @@ import (
 	"emp/internal/platform/database"
 	"emp/internal/platform/httpx"
 	mw "emp/internal/platform/middleware"
+	"emp/internal/platform/telegram"
 	"emp/internal/platform/validate"
 
 	"github.com/go-chi/chi/v5"
@@ -403,7 +404,8 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 			"responsible_name": respName, "version": extra.Version, "started_at": extra.StartedAt, "lead_id": extra.LeadID, "branch_name": branchName}
 		out["fields"] = customfield.Visible(fields, p)
 
-		// родители
+		// родители; ссылка ведёт на бота школы (или общий бот платформы)
+		bot := telegram.Username(ctx, tx, h.BotName)
 		prow, err := tx.Query(ctx, `SELECT p.id, p.full_name, p.phone, p.email, p.telegram_chat_id IS NOT NULL, p.telegram_link_code, sp.relation, sp.is_payer, sp.is_legal_rep, p.consent_at
 			FROM student_parents sp JOIN parents p ON p.id=sp.parent_id WHERE sp.student_id=$1 ORDER BY sp.is_payer DESC, p.full_name`, id)
 		if err != nil {
@@ -418,7 +420,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 			prow.Scan(&pid, &name, &phone, &email, &tg, &code, &rel, &payer, &legal, &consent)
 			var link *string
 			if code != nil {
-				l := "https://t.me/" + h.BotName + "?start=" + *code
+				l := "https://t.me/" + bot + "?start=" + *code
 				link = &l
 			}
 			parents = append(parents, map[string]any{"id": pid, "full_name": name, "phone": phone, "email": email, "telegram_linked": tg,

@@ -25,6 +25,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-	(&notification.Worker{DB: db, BotToken: cfg.TelegramBotToken}).Run(ctx)
+	(&notification.Worker{DB: db, BotToken: cfg.TelegramBotToken, PublicURL: cfg.PublicURL}).Run(ctx)
 	slog.Info("worker stopped")
 }

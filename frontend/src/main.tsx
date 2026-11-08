@@ -19,6 +19,7 @@ import GroupCard from './pages/GroupCard'
 import Schedule from './pages/Schedule'
 import Attendance from './pages/Attendance'
 import AttendanceMark from './pages/AttendanceMark'
+import MiniApp from './miniapp/MiniApp'
 import Finance from './pages/finance/Finance'
 import Leads from './pages/leads/Leads'
 import Reports from './pages/Reports'
@@ -66,6 +67,8 @@ createRoot(document.getElementById('root')!).render(
           <Routes>
             <Route path="/login" element={<Public><Login /></Public>} />
             <Route path="/register" element={<Public><Register /></Public>} />
+            {/* личный кабинет учеников, родителей и преподавателей (Telegram Mini App) */}
+            <Route path="/app/*" element={<MiniApp />} />
             {/* мобильная отметка посещаемости (кабинет преподавателя / Mini App) — без сайдбара */}
             <Route path="/attendance/:lessonId" element={<Guard perm={['attendance.mark', 'attendance.view']}><AttendanceMark /></Guard>} />
             <Route element={<Guard><Layout /></Guard>}>

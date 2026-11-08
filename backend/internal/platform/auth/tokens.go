@@ -85,6 +85,39 @@ func ParseAccess(secret, token string) (*Claims, error) {
 	return c, nil
 }
 
+// ---------------------------------------------------------------- кабинет ученика/родителя
+
+// Токен кабинета выпускается с отдельным issuer: API сотрудников (ParseAccess) его не принимает, и наоборот.
+const PortalTTL = 12 * time.Hour
+
+type PortalClaims struct {
+	TenantID string `json:"tid"`
+	Kind     string `json:"kind"`
+	jwt.RegisteredClaims
+}
+
+func IssuePortal(secret, accountID, tenantID, kind string) (string, error) {
+	now := time.Now()
+	c := PortalClaims{TenantID: tenantID, Kind: kind, RegisteredClaims: jwt.RegisteredClaims{
+		Subject:   accountID,
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(PortalTTL)),
+		Issuer:    "emp-portal",
+	}}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString([]byte(secret))
+}
+
+func ParsePortal(secret, token string) (*PortalClaims, error) {
+	c := &PortalClaims{}
+	t, err := jwt.ParseWithClaims(token, c, func(t *jwt.Token) (any, error) {
+		return []byte(secret), nil
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("emp-portal"))
+	if err != nil || !t.Valid {
+		return nil, errors.New("invalid token")
+	}
+	return c, nil
+}
+
 // ---------------------------------------------------------------- refresh token
 
 func NewRefreshToken() (token string, hash []byte) {

@@ -66,6 +66,7 @@ JWT_SECRET=$(openssl rand -hex 32)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_BOT_NAME=emp_center_bot
 COOKIE_SECURE=true
+PUBLIC_URL=https://$DOMAIN
 EOF
   chown "$APP_USER:$APP_USER" "$ENV"
   chmod 600 "$ENV"

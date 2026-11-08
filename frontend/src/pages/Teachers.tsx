@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { api, errorsByField } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { money, parseMoney, phone } from '../lib/format'
+import { dateTime, money, parseMoney, phone } from '../lib/format'
 import type { Employee } from '../lib/types'
 import { Avatar, Badge, Button, Card, Checkbox, Drawer, Field, Input, Modal, Select, Spinner, Table } from '../components/ui'
 
@@ -59,9 +59,57 @@ function EmployeeDrawer({ id, onClose, onEdit }: { id: string; onClose: () => vo
         </div>
         <div><div className="mb-2 font-semibold">Группы</div>{groups.map((g) => <div key={g.id} className="py-1">{g.name} · <span className="text-muted">{g.students} уч.</span></div>)}</div>
         <div>Условия оплаты: {payTypes[e.pay_type]} · {money(e.pay_rate_tiyn)}</div>
+        {e.is_teacher && e.status === 'active' && <TelegramAccess id={e.id} />}
         {can('employees.edit') && <Button onClick={() => onEdit(e)}>Редактировать</Button>}
       </div>
     </Drawer>
+  )
+}
+
+// Доступ преподавателя к кабинету в Telegram: одноразовая ссылка-приглашение на бота школы (7 дней).
+function TelegramAccess({ id }: { id: string }) {
+  const { can } = useAuth()
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['employee-telegram', id], queryFn: () => api.get<{ linked: boolean; invite_expires_at: string | null }>(`/employees/${id}/telegram`) })
+  const [link, setLink] = useState<{ link: string; expires_at: string } | null>(null)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const invite = useMutation({
+    mutationFn: () => api.post<{ link: string; expires_at: string }>(`/employees/${id}/telegram-invite`),
+    onSuccess: (d) => { setLink(d); setError(''); qc.invalidateQueries({ queryKey: ['employee-telegram', id] }); qc.invalidateQueries({ queryKey: ['employees'] }) },
+    onError: (e) => setError((e as Error).message),
+  })
+  const revoke = useMutation({
+    mutationFn: () => api.del(`/employees/${id}/telegram`),
+    onSuccess: () => { setLink(null); qc.invalidateQueries({ queryKey: ['employee-telegram', id] }) },
+  })
+  if (!q.data) return null
+  return (
+    <div className="space-y-3 rounded-xl border border-line p-4">
+      <div className="flex items-center justify-between">
+        <div className="font-semibold">Кабинет в Telegram</div>
+        {q.data.linked ? <Badge tone="green">Доступ открыт</Badge> : q.data.invite_expires_at ? <Badge tone="yellow">Приглашение отправлено</Badge> : <Badge>Нет доступа</Badge>}
+      </div>
+      <p className="text-[13px] text-muted">Преподаватель видит своё расписание, статистику и проведённые уроки и отмечает посещаемость прямо в Telegram.</p>
+      {link && (
+        <div className="space-y-2 rounded-lg bg-gray-50 p-3">
+          <div className="break-all font-mono text-xs">{link.link}</div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => { navigator.clipboard?.writeText(link.link); setCopied(true) }}>{copied ? 'Скопировано' : 'Копировать ссылку'}</Button>
+            <span className="text-xs text-muted">Одноразовая, действует до {dateTime(link.expires_at)}</span>
+          </div>
+        </div>
+      )}
+      {error && <div className="text-sm text-red-700">{error}</div>}
+      {can('employees.edit') && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant={q.data.linked ? 'secondary' : 'primary'} loading={invite.isPending} onClick={() => { setCopied(false); invite.mutate() }}>
+            {q.data.linked ? 'Новая ссылка (другой телефон)' : 'Дать доступ — создать ссылку'}
+          </Button>
+          {(q.data.linked || q.data.invite_expires_at) && <Button size="sm" variant="danger" loading={revoke.isPending} onClick={() => revoke.mutate()}>Закрыть доступ</Button>}
+        </div>
+      )}
+    </div>
   )
 }
 

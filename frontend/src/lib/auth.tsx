@@ -41,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [branchId])
 
   useEffect(() => {
+    // кабинет /app входит сам (Telegram или ИИН) — восстановление сессии сотрудника там не нужно
+    if (location.pathname.startsWith('/app')) { setLoading(false); return }
     // восстановление сессии по refresh-cookie
     refresh().then(async (ok) => {
       if (ok) await loadMe().catch(() => setMe(null))

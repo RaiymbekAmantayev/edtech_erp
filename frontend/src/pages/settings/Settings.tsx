@@ -2,13 +2,14 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { cx } from '../../components/ui'
 import CustomFields from './CustomFields'
 import { Branches, Calendar, Organization, Plan, Rules } from './General'
+import TelegramBot from './TelegramBot'
 import Users from './Users'
 
 const items = [
   ['organization', 'Организация'], ['branches', 'Филиалы и кабинеты'], ['users', 'Пользователи и роли'], ['fields', 'Пользовательские поля'],
-  ['rules', 'Правила списания'], ['calendar', 'Календарь и праздники'], ['plan', 'Тариф и оплата'],
+  ['rules', 'Правила списания'], ['calendar', 'Календарь и праздники'], ['telegram', 'Telegram-бот'], ['plan', 'Тариф и оплата'],
 ]
-const soon = [['Статусы и воронки', 'этап 6'], ['Шаблоны документов', 'этап 6'], ['Уведомления', 'этап 7']]
+const soon = [['Статусы и воронки', 'этап 6'], ['Шаблоны документов', 'этап 6'], ['WhatsApp и SMS', 'этап 7']]
 
 export default function Settings() {
   return (
@@ -31,6 +32,7 @@ export default function Settings() {
           <Route path="fields" element={<CustomFields />} />
           <Route path="rules" element={<Rules />} />
           <Route path="calendar" element={<Calendar />} />
+          <Route path="telegram" element={<TelegramBot />} />
           <Route path="plan" element={<Plan />} />
         </Routes>
       </div>
