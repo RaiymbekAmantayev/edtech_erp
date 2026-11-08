@@ -17,7 +17,7 @@ export default function Settings() {
       <aside className="hidden w-56 shrink-0 border-r border-line bg-white px-3 py-6 md:block">
         <div className="px-3 pb-3 text-[11px] font-semibold uppercase tracking-wide text-muted">Настройки</div>
         {items.map(([to, l]) => (
-          <NavLink key={to} to={to} className={({ isActive }) => cx('block rounded-lg px-3 py-2 text-sm', isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink hover:bg-gray-50')}>{l}</NavLink>
+          <NavLink key={to} to={`/settings/${to}`} className={({ isActive }) => cx('block rounded-lg px-3 py-2 text-sm', isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink hover:bg-gray-50')}>{l}</NavLink>
         ))}
         <div className="mt-2 space-y-0.5">
           {soon.map(([l, s]) => <div key={l} className="flex justify-between px-3 py-2 text-sm text-gray-400" title="Запланировано в roadmap">{l}<span className="text-[10px]">{s}</span></div>)}
