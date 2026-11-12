@@ -21,6 +21,7 @@ import (
 	"emp/internal/modules/ktp"
 	"emp/internal/modules/lead"
 	"emp/internal/modules/parent"
+	"emp/internal/modules/payroll"
 	"emp/internal/modules/platform"
 	"emp/internal/modules/portal"
 	"emp/internal/modules/reporting"
@@ -105,6 +106,7 @@ func main() {
 				(&reporting.Handler{DB: db}).Routes(r)
 				(&exam.Handler{DB: db}).Routes(r)
 				(&ktp.Handler{DB: db}).Routes(r)
+				(&payroll.Handler{DB: db}).Routes(r)
 				cabinet.StaffRoutes(r)
 			})
 		})

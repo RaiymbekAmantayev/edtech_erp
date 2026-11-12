@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, CalendarDays, CheckSquare, CreditCard, Filter, GraduationCap, Home, LayoutGrid, LogOut, Plus, Search, Settings, BarChart3, UserRound, Users, Menu } from 'lucide-react'
+import { Bell, CalendarDays, CheckSquare, ClipboardCheck, CreditCard, Filter, GraduationCap, Home, LayoutGrid, LogOut, Plus, Search, Settings, BarChart3, UserRound, Users, Menu, Wallet } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { setLang, useLang, type Lang } from '../lib/i18n'
 import { api } from '../lib/api'
@@ -52,7 +52,9 @@ export default function Layout() {
         can('groups.view') && { to: '/groups', icon: LayoutGrid, label: t('nav.groups', 'Группы и курсы') },
         (can('schedule.view') || can('attendance.mark')) && { to: '/schedule', icon: CalendarDays, label: t('nav.schedule', 'Расписание') },
         (can('attendance.view') || can('attendance.mark')) && { to: '/attendance', icon: CheckSquare, label: t('nav.attendance', 'Посещаемость') },
+        can('students.view') && { to: '/tests', icon: ClipboardCheck, label: t('nav.tests', 'Тесты учеников') },
         can('finance.view') && { to: '/finance', icon: CreditCard, label: t('nav.finance', 'Финансы') },
+        can('payroll.view') && { to: '/payroll', icon: Wallet, label: t('nav.payroll', 'Зарплата') },
         can('reports.view') && { to: '/reports', icon: BarChart3, label: t('nav.reports', 'Отчёты') },
       ].filter(Boolean) as { to: string; icon: typeof Home; label: string; badge?: number }[]
 

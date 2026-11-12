@@ -29,6 +29,8 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Patch("/lessons/{id}", httpx.Handler(h.updateLesson).ServeHTTP)
 		r.Post("/lessons/{id}/cancel", httpx.Handler(h.cancel).ServeHTTP)
 		r.Post("/lessons/check", httpx.Handler(h.check).ServeHTTP)
+		r.Get("/lessons/{id}/substitutes", httpx.Handler(h.substitutes).ServeHTTP)
+		r.Post("/lessons/{id}/substitute", httpx.Handler(h.substitute).ServeHTTP)
 	})
 	r.With(mw.Perm("schedule.edit", "leads.edit")).Post("/lessons/{id}/guests", httpx.Handler(h.addGuest).ServeHTTP)
 }
@@ -58,6 +60,7 @@ type LessonDTO struct {
 	Marked        int        `json:"marked"`
 	Conflict      bool       `json:"conflict"`
 	ClosedAt      *time.Time `json:"closed_at"`
+	SubstituteFor *string    `json:"substitute_for"` // основной преподаватель группы, если урок ведёт замена
 }
 
 const lessonSel = `SELECT l.id, l.group_id, g.name, g.type, c.name, l.branch_id, l.teacher_id, e.full_name, l.classroom_id, cl.name, coalesce(g.capacity, cl.capacity),
@@ -68,7 +71,8 @@ const lessonSel = `SELECT l.id, l.group_id, g.name, g.type, c.name, l.branch_id,
 	(SELECT count(*) FROM attendance a WHERE a.lesson_id=l.id),
 	EXISTS (SELECT 1 FROM lessons x LEFT JOIN classrooms xc ON xc.id=x.classroom_id WHERE x.id<>l.id AND x.status<>'cancelled' AND l.status<>'cancelled'
 		AND x.starts_at < l.ends_at AND x.ends_at > l.starts_at
-		AND (x.teacher_id=l.teacher_id OR (x.classroom_id=l.classroom_id AND NOT coalesce(xc.is_online,false))))
+		AND (x.teacher_id=l.teacher_id OR (x.classroom_id=l.classroom_id AND NOT coalesce(xc.is_online,false)))),
+	(SELECT sf.full_name FROM employees sf WHERE sf.id=l.substitute_for)
 	FROM lessons l JOIN groups g ON g.id=l.group_id JOIN courses c ON c.id=g.course_id JOIN branches b ON b.id=l.branch_id
 	LEFT JOIN employees e ON e.id=l.teacher_id LEFT JOIN classrooms cl ON cl.id=l.classroom_id`
 
@@ -82,7 +86,7 @@ func ScanLessons(rows pgx.Rows) ([]LessonDTO, error) {
 	for rows.Next() {
 		var l LessonDTO
 		if err := rows.Scan(&l.ID, &l.GroupID, &l.GroupName, &l.GroupType, &l.CourseName, &l.BranchID, &l.TeacherID, &l.TeacherName, &l.ClassroomID, &l.ClassroomName, &l.Capacity,
-			&l.StartsAt, &l.EndsAt, &l.Type, &l.Status, &l.Topic, &l.MeetingURL, &l.ScheduleID, &l.ClosedAt, &l.Students, &l.Trials, &l.Marked, &l.Conflict); err != nil {
+			&l.StartsAt, &l.EndsAt, &l.Type, &l.Status, &l.Topic, &l.MeetingURL, &l.ScheduleID, &l.ClosedAt, &l.Students, &l.Trials, &l.Marked, &l.Conflict, &l.SubstituteFor); err != nil {
 			return nil, err
 		}
 		l.State = State(l.Status, l.StartsAt, l.EndsAt, l.Trials, now)
@@ -454,6 +458,12 @@ func (h *Handler) updateLesson(w http.ResponseWriter, r *http.Request) error {
 				meeting_url=COALESCE($7, meeting_url), status=$8, is_detached=(schedule_id IS NOT NULL) WHERE id=$1`,
 				id, newStart.UTC(), newEnd.UTC(), teacherID, classroomID, req.Topic, req.MeetingURL, newStatus); err != nil {
 				return err
+			}
+			if req.TeacherID != nil {
+				// замена отмечается относительно основного преподавателя группы, начисление переходит новому
+				if err := SetTeacher(ctx, tx, id, teacherID); err != nil {
+					return err
+				}
 			}
 			if !newStart.Equal(starts) {
 				database.Publish(ctx, tx, "lesson.rescheduled", map[string]any{"lesson_id": id, "from": starts, "to": newStart})

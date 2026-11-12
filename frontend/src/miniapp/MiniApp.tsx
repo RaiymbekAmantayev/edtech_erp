@@ -7,6 +7,7 @@ import { date, dateShort, dayMonth, money, plural, time } from '../lib/format'
 import { Avatar, Badge, Spinner, attendanceStatus, cx, type Tone } from '../components/ui'
 import AttendanceMark from '../pages/AttendanceMark'
 import { gradeStyle, num, type TestResult } from '../lib/tests'
+import { hours, payTypes, rateText, type Payroll } from '../lib/payroll'
 import { hasPortalToken, loadTelegram, portal, setPortalToken, type Lesson, type Overview, type PortalMe, type TeacherCabinet } from './portal'
 
 type Session = { kind: 'student' | 'parent' | 'staff' }
@@ -489,6 +490,7 @@ function TeacherHome() {
       ))}
       {tab === 'profile' && (
         <>
+          <TeacherPayroll />
           <Section title="Статистика">
             <div className="grid grid-cols-2 gap-2">
               <Tile label="Проведено в этом месяце" value={s.lessons_month} />
@@ -508,5 +510,73 @@ function TeacherHome() {
         </>
       )}
     </Shell>
+  )
+}
+
+// Начисления за месяц — те же данные, что в разделе «Зарплата» у администратора.
+function TeacherPayroll() {
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [open, setOpen] = useState(false)
+  const q = useQuery({ queryKey: ['teacher-payroll', month], queryFn: () => api.get<Payroll>('/teacher/payroll?month=' + month) })
+  const shift = (d: number) => {
+    const [y, m] = month.split('-').map(Number)
+    const t = new Date(Date.UTC(y, m - 1 + d, 1))
+    setMonth(t.toISOString().slice(0, 7))
+  }
+  const label = new Date(month + '-01T00:00:00').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+  const r = q.data
+  const t = r?.total
+  const pay = r?.teachers[0]
+  return (
+    <Section title="Начисления" action={
+      <div className="flex items-center gap-1 text-[13px]">
+        <button onClick={() => shift(-1)} className="h-8 rounded-lg px-2 text-brand-600" aria-label="Предыдущий месяц">‹</button>
+        <span className="min-w-28 text-center font-medium first-letter:uppercase">{label}</span>
+        <button onClick={() => shift(1)} disabled={month >= new Date().toISOString().slice(0, 7)} className="h-8 rounded-lg px-2 text-brand-600 disabled:opacity-30" aria-label="Следующий месяц">›</button>
+      </div>}>
+      {!r || !t ? <Spinner /> : (
+        <>
+          <Box className="mb-2">
+            <div className="text-[13px] text-muted">Начислено за проведённые занятия</div>
+            <div className="mt-1 text-[28px] font-bold tabular">{money(t.amount_tiyn)}</div>
+            {pay && <div className="mt-1 text-[13px] text-muted">{payTypes[pay.pay_type]} · {rateText(pay.pay_type, pay.rate_tiyn)}{pay.salary_tiyn > 0 && ' — оклад начисляется отдельно'}</div>}
+          </Box>
+          <div className="mb-2 grid grid-cols-3 gap-2">
+            <Tile label="Занятий" value={t.lessons} />
+            <Tile label="Часов" value={hours(t.minutes)} />
+            <Tile label="Замен" value={t.substitutions} />
+          </div>
+          <div className="mb-2 grid grid-cols-4 gap-2 text-center">
+            {([['Был', t.present], ['Опоздал', t.late], ['Не был', t.absent], ['Уваж.', t.excused]] as [string, number][]).map(([l, v]) => (
+              <div key={l} className="rounded-xl border border-line bg-white py-2"><div className="text-[17px] font-bold tabular">{v}</div><div className="text-[11px] text-muted">{l}</div></div>
+            ))}
+          </div>
+          {r.lessons.length > 0 && (
+            <>
+              <button onClick={() => setOpen(!open)} className="mb-2 h-11 w-full rounded-xl border border-line bg-white text-[14px] font-semibold text-brand-600">
+                {open ? 'Скрыть расчёт по занятиям' : `Расчёт по занятиям (${r.lessons.length})`}
+              </button>
+              {open && (
+                <Box className="divide-y divide-line !p-0">
+                  {r.lessons.map((l) => (
+                    <div key={l.lesson_id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-medium">{l.group}</div>
+                          <div className="text-[12px] text-muted">{dateShort(l.starts_at)} {time(l.starts_at)} · {l.minutes} мин · Б {l.present} / О {l.late} / Н {l.absent} / У {l.excused}</div>
+                          {l.substitute_for && <div className="text-[12px] text-purple-700">замена за {l.substitute_for}</div>}
+                        </div>
+                        <div className="shrink-0 text-[15px] font-bold tabular">{money(l.amount_tiyn)}</div>
+                      </div>
+                      <div className="mt-1 text-[12px] text-gray-600">{l.formula}</div>
+                    </div>
+                  ))}
+                </Box>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Section>
   )
 }

@@ -18,6 +18,8 @@ import Groups from './pages/Groups'
 import GroupCard from './pages/GroupCard'
 import Schedule from './pages/Schedule'
 import Attendance from './pages/Attendance'
+import TestResults from './pages/TestResults'
+import Payroll from './pages/Payroll'
 import AttendanceMark from './pages/AttendanceMark'
 import MiniApp from './miniapp/MiniApp'
 import Finance from './pages/finance/Finance'
@@ -82,6 +84,8 @@ createRoot(document.getElementById('root')!).render(
               <Route path="schedule" element={<Guard perm={['schedule.view', 'attendance.mark']}><Schedule /></Guard>} />
               <Route path="attendance" element={<Guard perm={['attendance.view', 'attendance.mark']}><Attendance /></Guard>} />
               <Route path="finance" element={<Guard perm="finance.view"><Finance /></Guard>} />
+              <Route path="tests" element={<Guard perm="students.view"><TestResults /></Guard>} />
+              <Route path="payroll" element={<Guard perm="payroll.view"><Payroll /></Guard>} />
               <Route path="leads" element={<Guard perm="leads.view"><Leads /></Guard>} />
               <Route path="reports" element={<Guard perm="reports.view"><Reports /></Guard>} />
               <Route path="settings/*" element={<Guard perm="settings.manage"><Settings /></Guard>} />

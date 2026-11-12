@@ -157,6 +157,7 @@ function LessonDrawer({ lesson: l, onClose, onChanged }: { lesson: Lesson; onClo
   const { can } = useAuth()
   const [move, setMove] = useState(false)
   const [trial, setTrial] = useState(false)
+  const [sub, setSub] = useState(false)
   const cancel = useMutation({ mutationFn: (scope: string) => api.post(`/lessons/${l.id}/cancel`, { scope, reason: '' }), onSuccess: onChanged })
   const keep = useMutation({ mutationFn: () => api.patch(`/lessons/${l.id}`, { scope: 'this', status: 'planned', force: true }), onSuccess: onChanged })
   return (
@@ -166,7 +167,7 @@ function LessonDrawer({ lesson: l, onClose, onChanged }: { lesson: Lesson; onClo
         <dl className="grid grid-cols-2 gap-3">
           <div><dt className="text-muted">Время</dt><dd className="font-medium tabular">{dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}–{time(l.ends_at)}</dd></div>
           <div><dt className="text-muted">Курс</dt><dd className="font-medium">{l.course_name}</dd></div>
-          <div><dt className="text-muted">Преподаватель</dt><dd className="font-medium">{l.teacher_name ?? '—'}</dd></div>
+          <div><dt className="text-muted">Преподаватель</dt><dd className="font-medium">{l.teacher_name ?? '—'}{l.substitute_for && <div className="mt-0.5"><Badge tone="purple">замена за {l.substitute_for}</Badge></div>}</dd></div>
           <div><dt className="text-muted">Кабинет</dt><dd className="font-medium">{l.classroom_name ?? '—'}</dd></div>
           <div><dt className="text-muted">Учеников</dt><dd className="font-medium">{l.students}{l.capacity ? ` из ${l.capacity}` : ''}{l.trials ? ` + ${l.trials} пробных` : ''}</dd></div>
           <div><dt className="text-muted">Отмечено</dt><dd className="font-medium">{l.marked}</dd></div>
@@ -175,7 +176,8 @@ function LessonDrawer({ lesson: l, onClose, onChanged }: { lesson: Lesson; onClo
         {l.status === 'needs_decision' && <Banner tone="yellow">Занятие попало на нерабочий день. Перенесите его или оставьте в расписании.</Banner>}
         <div className="flex flex-wrap gap-2 border-t border-line pt-4">
           {l.status !== 'cancelled' && new Date(l.starts_at).getTime() < Date.now() + 30 * 60e3 && <Link to={`/attendance/${l.id}`}><Button variant="primary">{l.status === 'done' ? 'Посещаемость' : 'Отметить посещаемость'}</Button></Link>}
-          {can('schedule.edit') && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setMove(true)}>Перенести / заменить</Button>}
+          {can('schedule.edit') && l.status !== 'cancelled' && <Button onClick={() => setSub(true)}>Заменить преподавателя</Button>}
+          {can('schedule.edit') && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setMove(true)}>Перенести</Button>}
           {can('schedule.edit') && l.status === 'needs_decision' && <Button loading={keep.isPending} onClick={() => keep.mutate()}>Провести в этот день</Button>}
           {(can('schedule.edit') || can('leads.edit')) && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setTrial(true)}>+ Пробный ученик</Button>}
           {can('schedule.edit') && l.status !== 'done' && l.status !== 'cancelled' && (
@@ -188,6 +190,7 @@ function LessonDrawer({ lesson: l, onClose, onChanged }: { lesson: Lesson; onClo
       </div>
       {move && <LessonModal lesson={l} onClose={() => setMove(false)} onSaved={onChanged} />}
       {trial && <TrialModal lesson={l} onClose={() => setTrial(false)} onSaved={onChanged} />}
+      {sub && <SubstituteModal lesson={l} onClose={() => setSub(false)} onSaved={() => { setSub(false); onChanged() }} />}
     </Drawer>
   )
 }
@@ -268,6 +271,42 @@ function TrialModal({ lesson, onClose, onSaved }: { lesson: Lesson; onClose: () 
     <Modal open title="Записать на пробное занятие" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={!lead} loading={m.isPending} onClick={() => m.mutate()}>Записать</Button></>}>
       <Select value={lead} onChange={(e) => setLead(e.target.value)}><option value="">Выберите лида</option>{list.map((l) => <option key={l.id} value={l.id}>{l.full_name}</option>)}</Select>
       <p className="mt-2 text-xs text-muted">Пробный ученик появится в посещаемости преподавателя с пометкой «Пробный», лид перейдёт на этап «Записан на пробное». Пробное занятие с абонемента не списывается.</p>
+    </Modal>
+  )
+}
+
+type SubOption = { id: string; full_name: string; subjects: string[]; free: boolean; busy: string | null; current: boolean; main: boolean }
+
+// Замена преподавателя: выбрать можно только того, у кого нет занятий в это время. Начисление за урок получит замена.
+function SubstituteModal({ lesson: l, onClose, onSaved }: { lesson: Lesson; onClose: () => void; onSaved: () => void }) {
+  const q = useQuery({ queryKey: ['substitutes', l.id], queryFn: () => api.get<SubOption[]>(`/lessons/${l.id}/substitutes`) })
+  const [pick, setPick] = useState('')
+  const [reason, setReason] = useState('')
+  const m = useMutation({ mutationFn: () => api.post(`/lessons/${l.id}/substitute`, { teacher_id: pick, reason }), onSuccess: onSaved })
+  const list = (q.data ?? []).filter((t) => !t.current)
+  return (
+    <Modal open title="Замена преподавателя" onClose={onClose}
+      footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={!pick} loading={m.isPending} onClick={() => m.mutate()}>Заменить</Button></>}>
+      <div className="space-y-3 text-sm">
+        <div className="text-muted">{l.group_name} · {dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}–{time(l.ends_at)}. Сейчас ведёт: <b className="text-ink">{l.teacher_name ?? '—'}</b></div>
+        {!q.data ? <Spinner /> : list.length === 0 ? <div className="py-6 text-center text-muted">В филиале нет других преподавателей</div> : (
+          <div className="max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+            {list.map((t) => (
+              <label key={t.id} className={cx('flex items-center gap-3 px-3 py-2.5', t.free ? 'cursor-pointer hover:bg-gray-50' : 'opacity-50')}>
+                <input type="radio" name="sub" disabled={!t.free} checked={pick === t.id} onChange={() => setPick(t.id)} className="accent-brand-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{t.full_name}{t.main && <span className="ml-1 text-xs text-muted">(основной преподаватель группы)</span>}</div>
+                  <div className="truncate text-xs text-muted">{t.free ? (t.subjects.join(', ') || 'Свободен') : `Занят: ${t.busy}`}</div>
+                </div>
+                {t.free ? <Badge tone="green">Свободен</Badge> : <Badge>Занят</Badge>}
+              </label>
+            ))}
+          </div>
+        )}
+        <Field label="Причина замены"><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Болезнь, отпуск…" /></Field>
+        <p className="text-xs text-muted">Занятие появится в кабинете нового преподавателя, ему придёт сообщение в Telegram. Начисление за урок получит тот, кто его провёл.{l.status === 'done' && ' Занятие уже проведено — начисление будет перенесено.'}</p>
+        {m.error && <div className="text-red-700">{(m.error as Error).message}</div>}
+      </div>
     </Modal>
   )
 }

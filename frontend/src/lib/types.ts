@@ -77,6 +77,7 @@ export type Lesson = {
   trials: number
   marked: number
   conflict: boolean
+  substitute_for: string | null
 }
 
 export type Group = {

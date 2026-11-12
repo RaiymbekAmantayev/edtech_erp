@@ -64,7 +64,7 @@ var AllPermissions = []string{
 	"groups.view", "groups.edit",
 	"schedule.view", "schedule.edit",
 	"attendance.view", "attendance.mark", "attendance.edit_closed", "tests.conduct",
-	"finance.view", "payments.create", "payments.refund", "subscriptions.edit",
+	"finance.view", "payments.create", "payments.refund", "subscriptions.edit", "payroll.view",
 	"reports.view",
 	"employees.view", "employees.edit",
 	"settings.manage", "custom_fields.manage", "roles.manage", "branches.manage",
@@ -103,7 +103,7 @@ var SystemRoles = []SystemRole{
 		"reports.view", "employees.view", "tests.conduct"}},
 	{"accountant", "Бухгалтер", true, []string{
 		"students.view", "parents.view", "groups.view", "schedule.view", "attendance.view",
-		"finance.view", "payments.create", "payments.refund", "subscriptions.edit", "reports.view",
+		"finance.view", "payments.create", "payments.refund", "subscriptions.edit", "reports.view", "payroll.view",
 		"employees.view", "audit.view"}},
 	{"hr", "HR-специалист", true, []string{"employees.view", "employees.edit"}},
 	{"sales", "Менеджер продаж", false, []string{

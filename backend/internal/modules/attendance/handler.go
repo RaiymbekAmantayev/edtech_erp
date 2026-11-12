@@ -13,6 +13,7 @@ import (
 	"emp/internal/modules/exam"
 	"emp/internal/modules/finance"
 	"emp/internal/modules/ktp"
+	"emp/internal/modules/payroll"
 	"emp/internal/platform/auth"
 	"emp/internal/platform/database"
 	"emp/internal/platform/httpx"
@@ -348,6 +349,10 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			result["charges"] = charged
+			// начисление преподавателю за урок пересчитывается по текущим отметкам
+			if err := payroll.Recalc(ctx, tx, id, false); err != nil {
+				return err
+			}
 		}
 		result["changed"] = changed
 		result["status"] = status

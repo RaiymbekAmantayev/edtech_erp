@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/xuri/excelize/v2"
 )
 
 type Handler struct{ DB *database.DB }
@@ -888,7 +889,11 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) error {
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 	p := auth.FromContext(r.Context())
 	q := r.URL.Query()
-	limit := httpx.QueryInt(r, "limit", 50, 200)
+	limit := httpx.QueryInt(r, "limit", 50, 1000)
+	export := q.Get("format") == "xlsx"
+	if export {
+		limit = 20000
+	}
 	ctx := r.Context()
 	var out []Result
 	err := h.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -907,6 +912,23 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 		if tid := q.Get("test_type_id"); tid != "" {
 			add("st.test_type_id = $?", tid)
 		}
+		if v := q.Get("teacher_id"); v != "" {
+			add("st.teacher_id = $?", v)
+		}
+		if v := q.Get("from"); v != "" {
+			add("st.taken_on >= $?::date", v)
+		}
+		if v := q.Get("to"); v != "" {
+			add("st.taken_on <= $?::date", v)
+		}
+		if v := strings.TrimSpace(q.Get("q")); v != "" {
+			add("s.full_name ILIKE '%' || $? || '%'", v)
+		}
+		if v := q.Get("source"); v == "lesson" {
+			where = append(where, "st.lesson_id IS NOT NULL")
+		} else if v == "manual" {
+			where = append(where, "st.lesson_id IS NULL")
+		}
 		if isStaff(p) {
 			if b := p.BranchFilter(); b != nil {
 				add("s.branch_id = ANY($?::uuid[])", b)
@@ -924,7 +946,85 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if export {
+		return exportXLSX(w, out)
+	}
 	return httpx.OK(w, out)
+}
+
+// exportXLSX — выгрузка результатов: строка на результат, баллы по навыкам — отдельными столбцами.
+func exportXLSX(w http.ResponseWriter, list []Result) error {
+	x := excelize.NewFile()
+	defer x.Close()
+	sheet := "Результаты тестов"
+	x.SetSheetName("Sheet1", sheet)
+	skills := []string{}
+	seen := map[string]bool{}
+	for _, r := range list {
+		for _, s := range r.Scores {
+			if !seen[s.Skill] {
+				seen[s.Skill] = true
+				skills = append(skills, s.Skill)
+			}
+		}
+	}
+	head := []any{"Дата", "Ученик", "Тест", "Группа", "Преподаватель", "Источник", "Баллы", "Максимум", "%", "Оценка"}
+	for _, s := range skills {
+		head = append(head, s)
+	}
+	head = append(head, "Комментарий")
+	put := func(row int, vals []any) {
+		for j, v := range vals {
+			cell, _ := excelize.CoordinatesToCellName(j+1, row)
+			x.SetCellValue(sheet, cell, v)
+		}
+	}
+	put(1, head)
+	bold, _ := x.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	last, _ := excelize.CoordinatesToCellName(len(head), 1)
+	x.SetCellStyle(sheet, "A1", last, bold)
+	opt := func(v *float64) any {
+		if v == nil {
+			return ""
+		}
+		return *v
+	}
+	str := func(v *string) string {
+		if v == nil {
+			return ""
+		}
+		return *v
+	}
+	for i, r := range list {
+		d, _ := time.Parse("2006-01-02", r.TakenOn)
+		src := "Карточка ученика"
+		if r.LessonID != nil {
+			src = "Урок"
+		}
+		grade := ""
+		if r.Grade != nil {
+			grade = r.Grade.Name
+		}
+		row := []any{d.Format("02.01.2006"), r.Student, r.TestType, str(r.Group), str(r.Teacher), src, opt(r.TotalScore), opt(r.MaxScore), opt(r.Percent), grade}
+		by := map[string]string{}
+		for _, s := range r.Scores {
+			switch {
+			case s.Grade != nil:
+				by[s.Skill] = s.Grade.Name
+			case s.Score != nil && s.MaxScore != nil:
+				by[s.Skill] = strconv.FormatFloat(*s.Score, 'f', -1, 64) + "/" + strconv.FormatFloat(*s.MaxScore, 'f', -1, 64)
+			}
+		}
+		for _, s := range skills {
+			row = append(row, by[s])
+		}
+		row = append(row, str(r.Comment))
+		put(i+2, row)
+	}
+	x.SetColWidth(sheet, "B", "E", 24)
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", `attachment; filename="tests_`+time.Now().Format("2006-01-02")+`.xlsx"`)
+	return x.Write(w)
 }
 
 type ScoreOut struct {

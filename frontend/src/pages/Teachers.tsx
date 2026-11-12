@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { api, errorsByField } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { dateTime, money, parseMoney, phone } from '../lib/format'
+import { dateTime, parseMoney, phone } from '../lib/format'
 import type { Employee } from '../lib/types'
+import { payTypes, rateText } from '../lib/payroll'
 import { Avatar, Badge, Button, Card, Checkbox, Drawer, Field, Input, Modal, Select, Spinner, Table } from '../components/ui'
 
-const payTypes: Record<string, string> = { fixed: 'Фиксированная', per_lesson: 'За занятие', hourly: 'Почасовая', percent: 'Процент', mixed: 'Комбинированная' }
 const roleNames: Record<string, string> = { teacher: 'Преподаватель', org_admin: 'Администратор', branch_manager: 'Управляющий филиалом', academic: 'Учебный отдел', accountant: 'Бухгалтер', hr: 'HR', sales: 'Менеджер продаж' }
 
 export default function Teachers() {
@@ -33,7 +33,7 @@ export default function Teachers() {
                 <td className="px-4 py-3 text-[13px]">{e.subjects.join(', ') || '—'}</td>
                 <td className="px-4 py-3 tabular">{e.groups_count}</td>
                 <td className="px-4 py-3 tabular">{e.week_lessons}</td>
-                <td className="px-4 py-3 text-[13px]">{payTypes[e.pay_type]}{e.pay_rate_tiyn != null && ` · ${money(e.pay_rate_tiyn)}`}</td>
+                <td className="px-4 py-3 text-[13px]">{payTypes[e.pay_type]}{e.pay_rate_tiyn != null && ` · ${rateText(e.pay_type, e.pay_rate_tiyn)}`}</td>
                 <td className="px-4 py-3">{e.user_id ? e.roles.map((r) => <Badge key={r} tone="blue" className="mr-1">{roleNames[r] ?? r}</Badge>) : <span className="text-[13px] text-muted">нет входа</span>}</td>
               </tr>
             ))}
@@ -58,7 +58,7 @@ function EmployeeDrawer({ id, onClose, onEdit }: { id: string; onClose: () => vo
           {[['Проведено в месяце', month.done], ['Отменено', month.cancelled], ['Без отметки', month.unmarked]].map(([l, v]) => <div key={l} className="rounded-xl border border-line p-3"><div className="text-xs text-muted">{l}</div><div className="mt-1 text-xl font-bold tabular">{v}</div></div>)}
         </div>
         <div><div className="mb-2 font-semibold">Группы</div>{groups.map((g) => <div key={g.id} className="py-1">{g.name} · <span className="text-muted">{g.students} уч.</span></div>)}</div>
-        <div>Условия оплаты: {payTypes[e.pay_type]} · {money(e.pay_rate_tiyn)}</div>
+        <div>Условия оплаты: {payTypes[e.pay_type]} · {rateText(e.pay_type, e.pay_rate_tiyn ?? 0)}</div>
         {e.is_teacher && e.status === 'active' && <TelegramAccess id={e.id} />}
         {can('employees.edit') && <Button onClick={() => onEdit(e)}>Редактировать</Button>}
       </div>
@@ -140,7 +140,10 @@ function EmployeeModal({ employee, onClose }: { employee?: Employee; onClose: ()
         <Field label="Предметы (через запятую)"><Input value={f.subjects} onChange={(e) => setF({ ...f, subjects: e.target.value })} /></Field>
         <Field label="Филиал"><Select value={f.branch_ids[0] ?? ''} onChange={(e) => setF({ ...f, branch_ids: e.target.value ? [e.target.value] : [] })}>{me?.branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></Field>
         <Field label="Модель оплаты"><Select value={f.pay_type} onChange={(e) => setF({ ...f, pay_type: e.target.value })}>{Object.entries(payTypes).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></Field>
-        <Field label="Ставка, ₸"><Input value={f.pay_rate} onChange={(e) => setF({ ...f, pay_rate: e.target.value })} /></Field>
+        <Field label={f.pay_type === 'percent' ? 'Процент от стоимости урока' : f.pay_type === 'hourly' ? 'Ставка за час, ₸' : f.pay_type === 'fixed' ? 'Оклад в месяц, ₸' : 'Ставка за занятие, ₸'}
+          hint={f.pay_type === 'percent' ? 'Например, 40 — преподаватель получает 40% от списанного с учеников за урок' : 'Начисление считается за каждое проведённое занятие — раздел «Зарплата»'}>
+          <Input value={f.pay_rate} onChange={(e) => setF({ ...f, pay_rate: e.target.value })} />
+        </Field>
         <div className="sm:col-span-2"><Checkbox checked={f.is_teacher} onChange={(v) => setF({ ...f, is_teacher: v })} label="Ведёт занятия (преподаватель)" /></div>
         {employee && <Field label="Статус"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="active">Работает</option><option value="archived">В архиве (доступ будет закрыт)</option></Select></Field>}
         {!employee && (

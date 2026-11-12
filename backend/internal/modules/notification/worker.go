@@ -196,6 +196,8 @@ func (w *Worker) handle(ctx context.Context, e event) error {
 			return err
 		}
 		studentIDs, _ = pgx.CollectRows(rows, pgx.RowTo[string])
+	case "lesson.substituted":
+		return w.notifySubstitute(ctx, e, loc, str("lesson_id"), str("teacher_id"))
 	case "lesson.report":
 		text = w.lessonReport(ctx, loc, str("lesson_id"), str("student_id"))
 		studentIDs = []string{str("student_id")}
@@ -401,4 +403,52 @@ func num(f float64) string {
 		return fmt.Sprintf("%d", int64(f))
 	}
 	return strings.Replace(fmt.Sprintf("%.1f", f), ".", ",", 1)
+}
+
+// notifySubstitute — преподавателю, поставленному на замену, приходит сообщение в Telegram-бот школы.
+func (w *Worker) notifySubstitute(ctx context.Context, e event, loc *time.Location, lessonID, teacherID string) error {
+	var group, name string
+	var room, mainTeacher *string
+	var chatID *int64
+	var starts, ends time.Time
+	if err := w.DB.Sys.QueryRow(ctx, `SELECT g.name, cl.name, l.starts_at, l.ends_at, e.full_name, u.telegram_id, (SELECT full_name FROM employees WHERE id=l.substitute_for)
+		FROM lessons l JOIN groups g ON g.id=l.group_id LEFT JOIN classrooms cl ON cl.id=l.classroom_id
+		JOIN employees e ON e.id=$2 LEFT JOIN users u ON u.id=e.user_id WHERE l.id=$1`, lessonID, teacherID).
+		Scan(&group, &room, &starts, &ends, &name, &chatID, &mainTeacher); err != nil {
+		return nil
+	}
+	text := fmt.Sprintf("🔁 Замена: %s, вы ведёте «%s» %s–%s", name, group, starts.In(loc).Format("02.01 15:04"), ends.In(loc).Format("15:04"))
+	if room != nil {
+		text += ", " + *room
+	}
+	if mainTeacher != nil {
+		text += " вместо " + *mainTeacher
+	}
+	text += ". Занятие уже в вашем кабинете."
+	key := fmt.Sprintf("%s#%d", e.Type, e.ID)
+	var done bool
+	w.DB.Sys.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM notification_logs WHERE event_type=$1 AND status='sent')`, key).Scan(&done)
+	if done {
+		return nil
+	}
+	if chatID == nil {
+		w.log(ctx, e, nil, "telegram", text, "skipped", "Преподаватель не подключён к Telegram")
+		return nil
+	}
+	var botID *int64
+	w.DB.Sys.QueryRow(ctx, `SELECT bot_id FROM tenant_bots WHERE tenant_id=$1 AND enabled`, e.TenantID).Scan(&botID)
+	b, ok := w.botFor(botID)
+	if !ok {
+		w.log(ctx, e, nil, "telegram", text, "skipped", "Бот школы не подключён")
+		return nil
+	}
+	if err := w.send(ctx, b.Token, *chatID, text, nil); err != nil {
+		if errors.Is(err, telegram.ErrNetwork) {
+			return err
+		}
+		w.log(ctx, e, nil, "telegram", text, "failed", err.Error())
+		return nil
+	}
+	w.log(ctx, e, nil, "telegram", text, "sent", "")
+	return nil
 }
