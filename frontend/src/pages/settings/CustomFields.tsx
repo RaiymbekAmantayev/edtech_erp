@@ -2,19 +2,19 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { GripVertical, Plus } from 'lucide-react'
 import { api, errorsByField } from '../../lib/api'
-import { label } from '../../lib/i18n'
+import { label, tr } from '../../lib/i18n'
 import type { CField, CFSettings, Course } from '../../lib/types'
 import { Badge, Button, Checkbox, Field, Input, Modal, Select, Spinner, Toast, cx } from '../../components/ui'
 import { CFInput, fieldTypes, groupByBlock, typeLabel, useBlocks, useFields } from '../../components/CustomFields'
 
-const entities = [['student', 'Ученик'], ['parent', 'Родитель'], ['lead', 'Лид'], ['employee', 'Преподаватель'], ['group', 'Группа'], ['payment', 'Платёж'], ['course', 'Курс']]
-const roles = [['org_admin', 'Администратор'], ['branch_manager', 'Управляющий филиалом'], ['teacher', 'Преподаватель'], ['sales', 'Менеджер продаж'], ['accountant', 'Бухгалтер'], ['academic', 'Учебный отдел']]
+const entities = [['student', tr('Ученик')], ['parent', tr('Родитель')], ['lead', tr('Лид')], ['employee', tr('Преподаватель')], ['group', tr('Группа')], ['payment', tr('Платёж')], ['course', tr('Курс')]]
+const roles = [['org_admin', tr('Администратор')], ['branch_manager', tr('Управляющий филиалом')], ['teacher', tr('Преподаватель')], ['sales', tr('Менеджер продаж')], ['accountant', tr('Бухгалтер')], ['academic', tr('Учебный отдел')]]
 const mainTypes = ['string', 'text', 'integer', 'money', 'date', 'boolean', 'select', 'multiselect', 'phone', 'url', 'file', 'employee']
 
 function describe(f: CField) {
   const s = f.settings
-  return [s.required === 'always' ? 'обязательное' : s.required === 'on_status' ? 'обязательное при статусе' : 'необязательное', f.is_unique && 'уникальное', f.is_sensitive && 'чувствительное',
-    s.course_ids?.length && 'только выбранные курсы', s.show_in_table && 'в таблице'].filter(Boolean).join(' · ')
+  return [s.required === 'always' ? tr('обязательное') : s.required === 'on_status' ? tr('обязательное при статусе') : tr('необязательное'), f.is_unique && tr('уникальное'), f.is_sensitive && tr('чувствительное'),
+    s.course_ids?.length && tr('только выбранные курсы'), s.show_in_table && tr('в таблице')].filter(Boolean).join(' · ')
 }
 
 // Настройки → Пользовательские поля (ТЗ 9, макет). Поля сразу появляются в карточках, таблицах, фильтрах, импорте, экспорте и API.
@@ -36,10 +36,10 @@ export default function CustomFields() {
     <div className="max-w-[1250px]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-[26px] font-bold">Пользовательские поля</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">Поля появятся в карточке, таблице, фильтрах, импорте, экспорте, шаблонах документов и API. Использовано {meta?.used ?? 0} из {meta?.limit_per_entity ?? '—'} полей для этой сущности на текущем тарифе.</p>
+          <h1 className="text-[26px] font-bold">{tr('Пользовательские поля')}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{tr('Поля появятся в карточке, таблице, фильтрах, импорте, экспорте, шаблонах документов и API. Использовано')} {meta?.used ?? 0} {tr('из')} {meta?.limit_per_entity ?? '—'} {tr('полей для этой сущности на текущем тарифе.')}</p>
         </div>
-        <div className="flex gap-2"><Button onClick={() => setBlockModal(true)}>+ Блок</Button><Button variant="primary" onClick={() => setSel('new')}><Plus className="size-4" />Поле</Button></div>
+        <div className="flex gap-2"><Button onClick={() => setBlockModal(true)}>{tr('+ Блок')}</Button><Button variant="primary" onClick={() => setSel('new')}><Plus className="size-4" />{tr('Поле')}</Button></div>
       </div>
       <div className="mt-5 inline-flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1">
         {entities.map(([k, l]) => (
@@ -53,7 +53,7 @@ export default function CustomFields() {
         <div className="space-y-4">
           {fq.isLoading ? <Spinner /> : groupByBlock(active, blocks.data).map(({ block, fields }) => (
             <div key={block?.id ?? 'none'} className="overflow-hidden rounded-xl border border-line bg-white">
-              <div className="flex items-center justify-between bg-gray-50 px-4 py-3"><span className="text-sm font-semibold">{block ? label(block.name) : 'Без блока'}</span><span className="text-xs text-muted">{fields.length} полей</span></div>
+              <div className="flex items-center justify-between bg-gray-50 px-4 py-3"><span className="text-sm font-semibold">{block ? label(block.name) : tr('Без блока')}</span><span className="text-xs text-muted">{fields.length} {tr('полей')}</span></div>
               {fields.map((f) => (
                 <button key={f.id} onClick={() => setSel(f.id)} className={cx('flex w-full items-center gap-2 border-t border-line px-4 py-3 text-left', sel === f.id ? 'border-l-4 border-l-brand-600 bg-brand-50/50' : 'hover:bg-gray-50')}>
                   <GripVertical className="size-4 shrink-0 text-gray-300" />
@@ -63,10 +63,10 @@ export default function CustomFields() {
               ))}
             </div>
           ))}
-          {active.length === 0 && !fq.isLoading && <div className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">Полей пока нет. Нажмите «+ Поле».</div>}
+          {active.length === 0 && !fq.isLoading && <div className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">{tr('Полей пока нет. Нажмите «+ Поле».')}</div>}
           {all.some((f) => f.archived_at) && (
             <div>
-              <button className="text-sm text-muted hover:text-ink" onClick={() => setShowArchived(!showArchived)}>Архив ({all.filter((f) => f.archived_at).length}) {showArchived ? '▴' : '▾'}</button>
+              <button className="text-sm text-muted hover:text-ink" onClick={() => setShowArchived(!showArchived)}>{tr('Архив (')}{all.filter((f) => f.archived_at).length}) {showArchived ? '▴' : '▾'}</button>
               {showArchived && all.filter((f) => f.archived_at).map((f) => <button key={f.id} onClick={() => setSel(f.id)} className="block py-1 text-sm text-muted line-through">{label(f.label)}</button>)}
             </div>
           )}
@@ -102,7 +102,7 @@ function FieldEditor({ entity, field, onSaved }: { entity: string; field?: CFiel
       const r = await api.post<{ id: string }>('/custom-fields', { ...body, block_id: blockId || null, options: options.filter((o) => o.trim()).map((o) => ({ ru: o.trim() })) })
       return r.id
     },
-    onSuccess: (id) => { invalidate(); setToast('Сохранено'); onSaved(id) },
+    onSuccess: (id) => { invalidate(); setToast(tr('Сохранено')); onSaved(id) },
     onError: (e) => setErrors({ ...errorsByField(e), _: (e as Error).message }),
   })
   const archive = useMutation({ mutationFn: () => api.post(`/custom-fields/${field!.id}/${field!.archived_at ? 'restore' : 'archive'}`), onSuccess: invalidate })
@@ -122,18 +122,18 @@ function FieldEditor({ entity, field, onSaved }: { entity: string; field?: CFiel
   return (
     <div className="h-fit rounded-xl border border-line bg-white p-5">
       <div className="flex items-start justify-between gap-3">
-        <h2 className="text-lg font-semibold">{labels.ru || 'Новое поле'}</h2>
+        <h2 className="text-lg font-semibold">{labels.ru || tr('Новое поле')}</h2>
         {field && <code className="rounded bg-gray-50 px-2 py-0.5 text-xs text-muted">key: {field.key}</code>}
       </div>
       <div className="mt-4">
-        <div className="mb-1.5 flex items-center gap-2 text-[13px] font-medium">Название
+        <div className="mb-1.5 flex items-center gap-2 text-[13px] font-medium">{tr('Название')}
           {(['ru', 'kk', 'en'] as const).map((l) => <button key={l} onClick={() => setLang(l)} className={cx('rounded px-1.5 py-0.5 text-[11px] font-semibold', lang === l ? 'bg-ink text-white' : 'bg-gray-100 text-muted')}>{l === 'kk' ? 'KZ' : l.toUpperCase()}</button>)}
         </div>
-        <Input value={labels[lang] ?? ''} onChange={(e) => setLabels({ ...labels, [lang]: e.target.value })} placeholder={lang === 'ru' ? 'Например, Целевой балл ЕНТ' : labels.ru} invalid={!!errors['label.ru']} />
-        {errors['label.ru'] && <div className="mt-1 text-xs text-red-600">Укажите название на русском</div>}
+        <Input value={labels[lang] ?? ''} onChange={(e) => setLabels({ ...labels, [lang]: e.target.value })} placeholder={lang === 'ru' ? tr('Например, Целевой балл ЕНТ') : labels.ru} invalid={!!errors['label.ru']} />
+        {errors['label.ru'] && <div className="mt-1 text-xs text-red-600">{tr('Укажите название на русском')}</div>}
       </div>
       <div className="mt-4">
-        <div className="mb-1.5 text-[13px] font-medium">Тип поля <span className="font-normal text-muted">· после создания не меняется</span></div>
+        <div className="mb-1.5 text-[13px] font-medium">{tr('Тип поля')} <span className="font-normal text-muted">{tr('· после создания не меняется')}</span></div>
         <div className="grid grid-cols-4 gap-1.5">
           {mainTypes.map((t) => (
             <button key={t} disabled={!typeAllowed(t)} onClick={() => canChangeType && setType(t)}
@@ -146,50 +146,50 @@ function FieldEditor({ entity, field, onSaved }: { entity: string; field?: CFiel
       </div>
       {(type === 'select' || type === 'multiselect') && (
         <div className="mt-4">
-          <div className="mb-1.5 text-[13px] font-medium">Варианты</div>
+          <div className="mb-1.5 text-[13px] font-medium">{tr('Варианты')}</div>
           {field ? (
             <div className="space-y-1">
               {field.options.map((o) => (
                 <div key={o.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-1.5 text-sm">
                   <span className={o.archived_at ? 'text-muted line-through' : ''}>{label(o.label)}</span>
-                  <button className="text-xs text-muted hover:text-ink" onClick={() => archiveOpt.mutate({ id: o.id, archived: !o.archived_at })}>{o.archived_at ? 'вернуть' : 'в архив'}</button>
+                  <button className="text-xs text-muted hover:text-ink" onClick={() => archiveOpt.mutate({ id: o.id, archived: !o.archived_at })}>{o.archived_at ? tr('вернуть') : tr('в архив')}</button>
                 </div>
               ))}
-              <div className="flex gap-2"><Input className="!h-9" value={newOption} onChange={(e) => setNewOption(e.target.value)} placeholder="Новый вариант" /><Button size="sm" className="!h-9" disabled={!newOption.trim()} onClick={() => addOpt.mutate()}>Добавить</Button></div>
-              <p className="text-xs text-muted">Варианты хранятся по ID: переименование не ломает данные, архивный вариант остаётся у старых записей.</p>
+              <div className="flex gap-2"><Input className="!h-9" value={newOption} onChange={(e) => setNewOption(e.target.value)} placeholder={tr('Новый вариант')} /><Button size="sm" className="!h-9" disabled={!newOption.trim()} onClick={() => addOpt.mutate()}>{tr('Добавить')}</Button></div>
+              <p className="text-xs text-muted">{tr('Варианты хранятся по ID: переименование не ломает данные, архивный вариант остаётся у старых записей.')}</p>
             </div>
           ) : (
             <div className="space-y-1.5">
-              {options.map((o, i) => <Input key={i} className="!h-9" value={o} onChange={(e) => setOptions(options.map((x, j) => (j === i ? e.target.value : x)))} placeholder={`Вариант ${i + 1}`} />)}
-              <button className="text-sm text-brand-600" onClick={() => setOptions([...options, ''])}>+ вариант</button>
+              {options.map((o, i) => <Input key={i} className="!h-9" value={o} onChange={(e) => setOptions(options.map((x, j) => (j === i ? e.target.value : x)))} placeholder={tr('Вариант {0}', i + 1)} />)}
+              <button className="text-sm text-brand-600" onClick={() => setOptions([...options, ''])}>{tr('+ вариант')}</button>
             </div>
           )}
         </div>
       )}
       {(type === 'integer' || type === 'decimal') && (
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <Field label="Минимум"><Input type="number" value={s.min ?? ''} onChange={(e) => setS({ ...s, min: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
-          <Field label="Максимум"><Input type="number" value={s.max ?? ''} onChange={(e) => setS({ ...s, max: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
+          <Field label={tr('Минимум')}><Input type="number" value={s.min ?? ''} onChange={(e) => setS({ ...s, min: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
+          <Field label={tr('Максимум')}><Input type="number" value={s.max ?? ''} onChange={(e) => setS({ ...s, max: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
         </div>
       )}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Field label="Блок в карточке">
-          <Select value={blockId} onChange={(e) => setBlockId(e.target.value)}><option value="">Без блока</option>{blocks.data?.map((b) => <option key={b.id} value={b.id}>{label(b.name)}</option>)}</Select>
+        <Field label={tr('Блок в карточке')}>
+          <Select value={blockId} onChange={(e) => setBlockId(e.target.value)}><option value="">{tr('Без блока')}</option>{blocks.data?.map((b) => <option key={b.id} value={b.id}>{label(b.name)}</option>)}</Select>
         </Field>
-        <Field label="Обязательность">
+        <Field label={tr('Обязательность')}>
           <Select value={s.required === 'on_status' ? 'on_status:' + (s.required_status ?? 'active') : s.required ?? ''} onChange={(e) => {
             const v = e.target.value
             setS(v.startsWith('on_status') ? { ...s, required: 'on_status', required_status: v.split(':')[1] } : { ...s, required: v as CFSettings['required'], required_status: undefined })
           }}>
-            <option value="">Не обязательно</option><option value="always">Обязательно всегда</option>
-            {entity === 'student' && <option value="on_status:active">При статусе «Занимается»</option>}
+            <option value="">{tr('Не обязательно')}</option><option value="always">{tr('Обязательно всегда')}</option>
+            {entity === 'student' && <option value="on_status:active">{tr('При статусе «Занимается»')}</option>}
           </Select>
         </Field>
       </div>
       {entity === 'student' && (
-        <Field className="mt-3" label="Где показывать">
+        <Field className="mt-3" label={tr('Где показывать')}>
           <Select value={s.course_ids?.length ? 'courses' : 'all'} onChange={(e) => setS({ ...s, course_ids: e.target.value === 'all' ? [] : courses.data?.slice(0, 1).map((c) => c.id) })}>
-            <option value="all">Все курсы</option><option value="courses">Только выбранные курсы{s.course_ids?.length ? `: ${courses.data?.filter((c) => s.course_ids!.includes(c.id)).map((c) => c.name).join(', ')}` : ''}</option>
+            <option value="all">{tr('Все курсы')}</option><option value="courses">{tr('Только выбранные курсы')}{s.course_ids?.length ? `: ${courses.data?.filter((c) => s.course_ids!.includes(c.id)).map((c) => c.name).join(', ')}` : ''}</option>
           </Select>
           {!!s.course_ids?.length && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -200,9 +200,9 @@ function FieldEditor({ entity, field, onSaved }: { entity: string; field?: CFiel
         </Field>
       )}
       <div className="mt-4">
-        <div className="mb-1.5 text-[13px] font-medium">Доступ по ролям <span className="font-normal text-muted">· владелец видит всё</span></div>
+        <div className="mb-1.5 text-[13px] font-medium">{tr('Доступ по ролям')} <span className="font-normal text-muted">{tr('· владелец видит всё')}</span></div>
         <div className="overflow-hidden rounded-lg border border-line text-sm">
-          <div className="grid grid-cols-[1fr_70px_70px] bg-gray-50 px-3 py-2 text-xs font-semibold text-muted"><span>Роль</span><span className="text-center">Видит</span><span className="text-center">Меняет</span></div>
+          <div className="grid grid-cols-[1fr_70px_70px] bg-gray-50 px-3 py-2 text-xs font-semibold text-muted"><span>{tr('Роль')}</span><span className="text-center">{tr('Видит')}</span><span className="text-center">{tr('Меняет')}</span></div>
           {roles.map(([r, l]) => (
             <div key={r} className="grid grid-cols-[1fr_70px_70px] items-center border-t border-line px-3 py-2">
               <span>{l}</span>
@@ -213,28 +213,28 @@ function FieldEditor({ entity, field, onSaved }: { entity: string; field?: CFiel
         </div>
       </div>
       <div className="mt-4">
-        <div className="mb-2 text-[13px] font-medium">Отображение</div>
+        <div className="mb-2 text-[13px] font-medium">{tr('Отображение')}</div>
         <div className="grid gap-2 sm:grid-cols-2">
-          <Checkbox checked={!!s.show_in_create} onChange={(v) => setS({ ...s, show_in_create: v })} label="В форме создания" />
-          <Checkbox checked={!!s.show_in_table} onChange={(v) => setS({ ...s, show_in_table: v })} label="Колонкой в таблице" />
-          <Checkbox checked={!!s.show_in_teacher} onChange={(v) => setS({ ...s, show_in_teacher: v })} label="В кабинете преподавателя" />
-          <Checkbox checked={!!s.show_in_parent} onChange={(v) => setS({ ...s, show_in_parent: v })} label="В портале родителя" />
-          <Checkbox checked={unique} onChange={setUnique} label="Уникальное значение" />
-          <Checkbox checked={sensitive} onChange={setSensitive} label="Чувствительное (маска)" />
+          <Checkbox checked={!!s.show_in_create} onChange={(v) => setS({ ...s, show_in_create: v })} label={tr('В форме создания')} />
+          <Checkbox checked={!!s.show_in_table} onChange={(v) => setS({ ...s, show_in_table: v })} label={tr('Колонкой в таблице')} />
+          <Checkbox checked={!!s.show_in_teacher} onChange={(v) => setS({ ...s, show_in_teacher: v })} label={tr('В кабинете преподавателя')} />
+          <Checkbox checked={!!s.show_in_parent} onChange={(v) => setS({ ...s, show_in_parent: v })} label={tr('В портале родителя')} />
+          <Checkbox checked={unique} onChange={setUnique} label={tr('Уникальное значение')} />
+          <Checkbox checked={sensitive} onChange={setSensitive} label={tr('Чувствительное (маска)')} />
         </div>
       </div>
       {errors._ && !errors['label.ru'] && <div className="mt-3 text-sm text-red-700">{errors._}</div>}
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <Button variant="primary" loading={save.isPending} onClick={() => { setErrors({}); save.mutate() }}>Сохранить</Button>
-        <Button onClick={() => setPreview(true)}>Предпросмотр формы</Button>
+        <Button variant="primary" loading={save.isPending} onClick={() => { setErrors({}); save.mutate() }}>{tr('Сохранить')}</Button>
+        <Button onClick={() => setPreview(true)}>{tr('Предпросмотр формы')}</Button>
         <div className="flex-1" />
-        {field && <button className="text-sm text-red-700 hover:underline" onClick={() => (field.archived_at || confirm('Отправить поле в архив? Данные сохранятся, поле скроется из форм и таблиц.')) && archive.mutate()}>{field.archived_at ? 'Вернуть из архива' : 'В архив'}</button>}
+        {field && <button className="text-sm text-red-700 hover:underline" onClick={() => (field.archived_at || confirm(tr('Отправить поле в архив? Данные сохранятся, поле скроется из форм и таблиц.'))) && archive.mutate()}>{field.archived_at ? tr('Вернуть из архива') : tr('В архив')}</button>}
       </div>
       {preview && (
-        <Modal open title="Предпросмотр: как увидит администратор" onClose={() => setPreview(false)}>
+        <Modal open title={tr('Предпросмотр: как увидит администратор')} onClose={() => setPreview(false)}>
           <CFInput field={{ ...(field ?? { id: 'x', entity_type: entity, key: 'preview', block_id: null, sort_order: 0, archived_at: null, options: options.filter(Boolean).map((o, i) => ({ id: String(i), label: { ru: o }, color: null, sort_order: i, archived_at: null })) }), label: labels, field_type: type, settings: s, is_sensitive: sensitive, is_unique: unique } as CField}
             value={undefined} onChange={() => {}} required={s.required === 'always'} />
-          <p className="mt-4 text-xs text-muted">{s.show_in_teacher ? 'Преподаватель увидит поле в списке отметки посещаемости.' : 'Преподаватель не увидит это поле в своём кабинете.'}</p>
+          <p className="mt-4 text-xs text-muted">{s.show_in_teacher ? tr('Преподаватель увидит поле в списке отметки посещаемости.') : tr('Преподаватель не увидит это поле в своём кабинете.')}</p>
         </Modal>
       )}
       {toast && <Toast text={toast} onDone={() => setToast('')} />}
@@ -247,8 +247,8 @@ function BlockModal({ entity, onClose }: { entity: string; onClose: () => void }
   const [name, setName] = useState('')
   const m = useMutation({ mutationFn: () => api.post('/custom-field-blocks', { entity_type: entity, name: { ru: name } }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['cf-blocks'] }); onClose() } })
   return (
-    <Modal open title="Новый блок полей" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={!name.trim()} loading={m.isPending} onClick={() => m.mutate()}>Создать</Button></>}>
-      <Field label="Название блока" hint="Например: Анкета, Медицинское, Для договора"><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
+    <Modal open title={tr('Новый блок полей')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" disabled={!name.trim()} loading={m.isPending} onClick={() => m.mutate()}>{tr('Создать')}</Button></>}>
+      <Field label={tr('Название блока')} hint={tr('Например: Анкета, Медицинское, Для договора')}><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
     </Modal>
   )
 }

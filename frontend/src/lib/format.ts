@@ -1,3 +1,4 @@
+import { tr, intlLocale } from './i18n'
 // Форматирование по локали пользователя: 02.11.2026, 25 000 ₸. Деньги приходят в тиын (целые числа) — без float-арифметики.
 export const TZ = 'Asia/Almaty'
 
@@ -25,7 +26,7 @@ export function phone(e164?: string | null): string {
   return m ? `+7 ${m[1]} ${m[2]}-${m[3]}-${m[4]}` : e164
 }
 
-const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, ...o })
+const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(intlLocale(), { timeZone: TZ, ...o })
 export const date = (v?: string | Date | null) => (v ? fmt({ day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(v)) : '—')
 export const dateShort = (v?: string | Date | null) => (v ? fmt({ day: '2-digit', month: '2-digit' }).format(new Date(v)) : '—')
 export const time = (v?: string | Date | null) => (v ? fmt({ hour: '2-digit', minute: '2-digit' }).format(new Date(v)) : '')
@@ -51,12 +52,12 @@ export function addDays(day: string, n: number): string {
 }
 
 export function relative(v?: string | null): string {
-  if (!v) return 'никогда'
+  if (!v) return tr('никогда')
   const diff = Date.now() - new Date(v).getTime()
   const days = Math.floor(diff / 864e5)
-  if (days <= 0) return `сегодня, ${time(v)}`
-  if (days === 1) return `вчера, ${time(v)}`
-  return `${days} ${plural(days, 'день', 'дня', 'дней')} назад`
+  if (days <= 0) return tr('сегодня, {0}', time(v))
+  if (days === 1) return tr('вчера, {0}', time(v))
+  return tr('{0} {1} назад', days, plural(days, tr('день'), tr('дня'), tr('дней')))
 }
 
 export function plural(n: number, one: string, few: string, many: string) {
@@ -72,10 +73,10 @@ export function age(birth?: string | null): string {
   const n = new Date()
   let a = n.getFullYear() - b.getFullYear()
   if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate())) a--
-  return `${a} ${plural(a, 'год', 'года', 'лет')}`
+  return `${a} ${plural(a, tr('год'), tr('года'), tr('лет'))}`
 }
 
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase()
 
-export const weekdayShort = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+export const weekdayShort = [tr('Пн'), tr('Вт'), tr('Ср'), tr('Чт'), tr('Пт'), tr('Сб'), tr('Вс')]
 export const weekdaysText = (w: number[]) => w.map((d) => weekdayShort[d - 1]).join(', ')

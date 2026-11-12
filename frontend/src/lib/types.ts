@@ -103,5 +103,5 @@ export type Group = {
 }
 
 export type Course = { id: string; name: string; description: string | null; category: string | null; duration_minutes: number; lessons_count: number; price_tiyn: number; status: string; groups: number; students: number }
-export type Employee = { id: string; user_id: string | null; full_name: string; phone: string | null; email: string | null; position: string | null; is_teacher: boolean; subjects: string[]; branch_ids: string[]; status: string; pay_type: string; pay_rate_tiyn?: number; groups_count: number; week_lessons: number; roles: string[] }
+export type Employee = { id: string; user_id: string | null; full_name: string; phone: string | null; email: string | null; position: string | null; is_teacher: boolean; subjects: string[]; branch_ids: string[]; status: string; pay_type: string; pay_rate_tiyn?: number; pay_percent?: number; payroll_visible: string; groups_count: number; week_lessons: number; roles: string[] }
 export type Classroom = { id: string; branch_id: string; name: string; capacity: number | null; is_online: boolean; equipment: string | null; status: string }

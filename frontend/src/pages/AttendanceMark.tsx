@@ -6,6 +6,7 @@ import { ApiError, api } from '../lib/api'
 import { dayMonth, time } from '../lib/format'
 import { autoGrade, gradeStyle, num, summarize, type TestGrade, type TestType } from '../lib/tests'
 import { Avatar, Badge, Spinner, cx } from '../components/ui'
+import { tr } from '../lib/i18n'
 
 type Item = { student_id: string | null; lead_id: string | null; full_name: string; is_trial: boolean; status: string | null; reason: string | null; info: Record<string, { label: string; value: string }>; note?: string }
 type KtpTopic = { id: string; number: number; title: string; homework: string | null; done?: boolean }
@@ -25,10 +26,10 @@ type Data = {
 type Scores = Record<string, Record<string, Record<string, string>>>
 
 const statuses = [
-  { v: 'present', l: 'Был', on: 'border-green-400 bg-green-50 text-green-800' },
-  { v: 'late', l: 'Опоздал', on: 'border-amber-400 bg-amber-50 text-amber-800' },
-  { v: 'absent', l: 'Не был', on: 'border-red-400 bg-red-50 text-red-800' },
-  { v: 'excused', l: 'Уваж.', on: 'border-indigo-400 bg-indigo-50 text-indigo-800' },
+  { v: 'present', l: tr('Был'), on: 'border-green-400 bg-green-50 text-green-800' },
+  { v: 'late', l: tr('Опоздал'), on: 'border-amber-400 bg-amber-50 text-amber-800' },
+  { v: 'absent', l: tr('Не был'), on: 'border-red-400 bg-red-50 text-red-800' },
+  { v: 'excused', l: tr('Уваж.'), on: 'border-indigo-400 bg-indigo-50 text-indigo-800' },
 ]
 const came = (s?: string) => s === 'present' || s === 'late' || s === 'trial'
 const field = 'w-full rounded-xl border border-line bg-white px-3 text-[15px] outline-none focus:border-brand-500 disabled:bg-gray-50'
@@ -76,7 +77,7 @@ export default function AttendanceMark() {
   const plan = useMutation({
     mutationFn: () => api.put(`/lessons/${lessonId}/attendance`, { items: [], topic, homework, ktp_topic_id: ktpId, close: false }),
     onSuccess: () => { setSaved(true); qc.invalidateQueries(); setTimeout(() => nav(-1), 900) },
-    onError: (e) => setError(e instanceof ApiError ? e.message : 'Не удалось сохранить'),
+    onError: (e) => setError(e instanceof ApiError ? e.message : tr('Не удалось сохранить')),
   })
   const save = useMutation({
     mutationFn: () => {
@@ -96,10 +97,10 @@ export default function AttendanceMark() {
       })
     },
     onSuccess: () => { setSaved(true); qc.invalidateQueries(); setTimeout(() => nav(-1), 900) },
-    onError: (e) => setError(e instanceof ApiError ? e.message : 'Не удалось сохранить'),
+    onError: (e) => setError(e instanceof ApiError ? e.message : tr('Не удалось сохранить')),
   })
   if (q.isLoading) return <Spinner className="h-full" />
-  if (!q.data) return <div className="p-10 text-center text-muted">Занятие не найдено</div>
+  if (!q.data) return <div className="p-10 text-center text-muted">{tr('Занятие не найдено')}</div>
   const { lesson, roster, editable, ktp, tests, grades } = q.data
   const total = roster.length
   const done = roster.filter((r) => marks[key(r)]).length
@@ -115,37 +116,37 @@ export default function AttendanceMark() {
   }
   const setScore = (sid: string, tid: string, kid: string, v: string) =>
     setScores({ ...scores, [sid]: { ...scores[sid], [tid]: { ...scores[sid]?.[tid], [kid]: v } } })
-  const blocked = left > 0 ? `осталось ${left}` : missing > 0 && lesson.status !== 'done' ? `обязательные тесты · ${missing}` : over ? 'балл больше максимума' : ''
+  const blocked = left > 0 ? tr('осталось {0}', left) : missing > 0 && lesson.status !== 'done' ? tr('обязательные тесты · {0}', missing) : over ? tr('балл больше максимума') : ''
 
   return (
     <div className="mx-auto flex h-full max-w-xl flex-col bg-page">
       <header className="border-b border-line bg-white px-4 pb-4 pt-5">
         <div className="flex items-start gap-3">
-          <button onClick={() => nav(-1)} className="flex size-11 items-center justify-center rounded-full hover:bg-gray-100" aria-label="Назад"><ChevronLeft className="size-6" /></button>
+          <button onClick={() => nav(-1)} className="flex size-11 items-center justify-center rounded-full hover:bg-gray-100" aria-label={tr('Назад')}><ChevronLeft className="size-6" /></button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl font-bold">{lesson.group_name}</h1>
             <div className="text-sm text-muted first-letter:uppercase">{dayMonth(new Date(lesson.starts_at))} {time(lesson.starts_at)}–{time(lesson.ends_at)}{lesson.classroom && ` · ${lesson.classroom}`}</div>
           </div>
-          {lesson.status === 'done' && <Badge tone="green">Проведено</Badge>}
+          {lesson.status === 'done' && <Badge tone="green">{tr('Проведено')}</Badge>}
         </div>
         <div className="mt-4 flex items-center gap-3">
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-brand-600 transition-all" style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div>
-          <span className="text-sm font-semibold tabular">{done} из {total}</span>
+          <span className="text-sm font-semibold tabular">{done} {tr('из')} {total}</span>
         </div>
         {editable && !notStarted && left > 0 && (
           <button onClick={() => { const m = { ...marks }; roster.forEach((r) => { if (!m[key(r)]) m[key(r)] = 'present' }); setMarks(m) }}
             className="mt-3 h-12 w-full rounded-xl border border-brand-200 bg-brand-50 text-[15px] font-semibold text-brand-700 active:bg-brand-100">
-            Отметить остальных «Был»
+            {tr('Отметить остальных «Был»')}
           </button>
         )}
       </header>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {notStarted && <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Занятие ещё не началось: тему и ДЗ можно подготовить заранее, посещаемость и баллы — после начала.</div>}
-        {!editable && <div className="rounded-xl bg-gray-100 p-4 text-sm text-gray-700">Срок редактирования истёк. Изменить отметки может администратор с правом «Изменение закрытой посещаемости».</div>}
+        {notStarted && <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{tr('Занятие ещё не началось: тему и ДЗ можно подготовить заранее, посещаемость и баллы — после начала.')}</div>}
+        {!editable && <div className="rounded-xl bg-gray-100 p-4 text-sm text-gray-700">{tr('Срок редактирования истёк. Изменить отметки может администратор с правом «Изменение закрытой посещаемости».')}</div>}
 
         <section className="space-y-3 rounded-2xl border border-line bg-white p-4">
-          <div className="flex items-center gap-2 text-[15px] font-semibold"><BookOpen className="size-4 text-brand-600" />Тема и домашнее задание</div>
+          <div className="flex items-center gap-2 text-[15px] font-semibold"><BookOpen className="size-4 text-brand-600" />{tr('Тема и домашнее задание')}</div>
           {ktp.categories.length > 0 && (
             <>
               {ktp.categories.length > 1 && (
@@ -157,30 +158,30 @@ export default function AttendanceMark() {
                 </div>
               )}
               <label className="block">
-                <span className="mb-1 block text-[12px] text-muted">Тема по КТП</span>
+                <span className="mb-1 block text-[12px] text-muted">{tr('Тема по КТП')}</span>
                 <select value={topics.some((t) => t.id === ktpId) ? ktpId : ''} disabled={!editable} onChange={(e) => chooseTopic(e.target.value)} className={cx(field, 'h-12')}>
-                  <option value="">— вне плана —</option>
-                  {topics.map((t) => <option key={t.id} value={t.id}>{t.done && t.id !== lesson.ktp_topic_id ? '✓ ' : ''}{t.number}. {t.title}{t.id === ktp.suggested_topic_id ? ' — по плану' : ''}</option>)}
+                  <option value="">{tr('— вне плана —')}</option>
+                  {topics.map((t) => <option key={t.id} value={t.id}>{t.done && t.id !== lesson.ktp_topic_id ? '✓ ' : ''}{t.number}. {t.title}{t.id === ktp.suggested_topic_id ? tr(' — по плану') : ''}</option>)}
                 </select>
               </label>
             </>
           )}
           <label className="block">
-            <span className="mb-1 block text-[12px] text-muted">Тема урока</span>
-            <input value={topic} onChange={(e) => setTopic(e.target.value)} disabled={!editable} placeholder="Необязательно" className={cx(field, 'h-12')} />
+            <span className="mb-1 block text-[12px] text-muted">{tr('Тема урока')}</span>
+            <input value={topic} onChange={(e) => setTopic(e.target.value)} disabled={!editable} placeholder={tr('Необязательно')} className={cx(field, 'h-12')} />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[12px] text-muted">Домашнее задание — придёт родителям</span>
-            <textarea value={homework} onChange={(e) => setHomework(e.target.value)} disabled={!editable} rows={3} placeholder="Без ДЗ" className={cx(field, 'py-2.5')} />
+            <span className="mb-1 block text-[12px] text-muted">{tr('Домашнее задание — придёт родителям')}</span>
+            <textarea value={homework} onChange={(e) => setHomework(e.target.value)} disabled={!editable} rows={3} placeholder={tr('Без ДЗ')} className={cx(field, 'py-2.5')} />
           </label>
         </section>
 
         {tests.length > 0 && (
           <div className="px-1 text-[13px] text-muted">
-            Тесты на уроке: {tests.map((t) => t.name + (t.required ? ' (обязательный)' : '')).join(', ')}. Баллы вводятся у пришедших учеников.
+            {tr('Тесты на уроке:')} {tests.map((t) => t.name + (t.required ? tr(' (обязательный)') : '')).join(', ')}{tr('. Баллы вводятся у пришедших учеников.')}
           </div>
         )}
-        {roster.length === 0 && <div className="py-10 text-center text-sm text-muted">В группе нет учеников на эту дату</div>}
+        {roster.length === 0 && <div className="py-10 text-center text-sm text-muted">{tr('В группе нет учеников на эту дату')}</div>}
         {roster.map((r) => {
           const st = marks[key(r)]
           const showTests = !!r.student_id && came(st) && tests.length > 0
@@ -189,7 +190,7 @@ export default function AttendanceMark() {
               <div className="flex items-center gap-3">
                 <Avatar name={r.full_name} tone="gray" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 truncate text-[15px] font-semibold">{r.full_name}{r.is_trial && <Badge tone="purple">Пробный</Badge>}</div>
+                  <div className="flex items-center gap-2 truncate text-[15px] font-semibold">{r.full_name}{r.is_trial && <Badge tone="purple">{tr('Пробный')}</Badge>}</div>
                   <div className="truncate text-[13px] text-muted">
                     {[...Object.values(r.info ?? {}).sort((a, b) => order(a.label) - order(b.label)).map((i) => `${shortLabel(i.label)} ${i.value}`), r.note].filter(Boolean).join(' · ') || ' '}
                   </div>
@@ -214,19 +215,19 @@ export default function AttendanceMark() {
 
       <footer className="space-y-3 border-t border-line bg-white p-4">
         {q.data.requires_reason && editable && (
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Причина изменения закрытого занятия (обязательно)"
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={tr('Причина изменения закрытого занятия (обязательно)')}
             className="h-12 w-full rounded-xl border border-amber-300 px-4 text-[15px] outline-none" />
         )}
         {error && <div className="text-sm text-red-700">{error}</div>}
         {planOnly ? (
           <button disabled={plan.isPending || saved} onClick={() => { setError(''); plan.mutate() }}
             className={cx('h-14 w-full rounded-xl text-[17px] font-semibold text-white transition-colors', saved ? 'bg-green-600' : 'bg-brand-600 active:bg-brand-700')}>
-            {saved ? 'Сохранено ✓' : plan.isPending ? 'Сохранение…' : 'Сохранить тему и ДЗ'}
+            {saved ? tr('Сохранено ✓') : plan.isPending ? tr('Сохранение…') : tr('Сохранить тему и ДЗ')}
           </button>
         ) : (
         <button disabled={disabled || !!blocked || save.isPending} onClick={() => { setError(''); save.mutate() }}
           className={cx('h-14 w-full rounded-xl text-[17px] font-semibold text-white transition-colors', saved ? 'bg-green-600' : blocked ? 'bg-gray-500' : 'bg-brand-600 active:bg-brand-700')}>
-          {saved ? 'Сохранено ✓' : blocked ? `Сохранить · ${blocked}` : save.isPending ? 'Сохранение…' : lesson.status === 'done' ? 'Сохранить изменения' : 'Сохранить и закрыть занятие'}
+          {saved ? tr('Сохранено ✓') : blocked ? tr('Сохранить · {0}', blocked) : save.isPending ? tr('Сохранение…') : lesson.status === 'done' ? tr('Сохранить изменения') : tr('Сохранить и закрыть занятие')}
         </button>
         )}
       </footer>
@@ -274,4 +275,4 @@ function TestInputs({ t, grades, values, disabled, onChange }: { t: LessonTest; 
 
 const key = (r: { student_id: string | null; lead_id: string | null }) => (r.student_id ?? '') + '|' + (r.lead_id ?? '')
 const order = (l: string) => ({ 'Целевой балл ЕНТ': 0, 'Профильные предметы': 1 } as Record<string, number>)[l] ?? 2
-const shortLabel = (l: string) => ({ 'Целевой балл ЕНТ': 'цель', 'Профильные предметы': 'профиль:', 'Класс': 'класс' } as Record<string, string>)[l] ?? l.toLowerCase() + ':'
+const shortLabel = (l: string) => ({ 'Целевой балл ЕНТ': tr('цель'), 'Профильные предметы': tr('профиль:'), 'Класс': tr('класс') } as Record<string, string>)[l] ?? l.toLowerCase() + ':'

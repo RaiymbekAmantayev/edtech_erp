@@ -4,7 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { Plus, SlidersHorizontal, X } from 'lucide-react'
 import { api, download, request } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { label } from '../lib/i18n'
+import { label, tr } from '../lib/i18n'
 import { date, money, phone } from '../lib/format'
 import type { CField, Course, Group, StudentRow } from '../lib/types'
 import { Button, Checkbox, Field, Input, Modal, Select, Spinner, StatusBadge, Toast, cx, studentStatus } from '../components/ui'
@@ -65,75 +65,75 @@ export default function Students() {
 
   const bulk = useMutation({
     mutationFn: (body: { action: string; value?: unknown; field?: string }) => api.post<{ updated: number }>('/students/bulk', { ids: [...selected], ...body }),
-    onSuccess: (r) => { setToast(`Обновлено: ${r.updated}`); setSelected(new Set()); setModal(null); qc.invalidateQueries({ queryKey: ['students'] }) },
+    onSuccess: (r) => { setToast(tr('Обновлено: {0}', r.updated)); setSelected(new Set()); setModal(null); qc.invalidateQueries({ queryKey: ['students'] }) },
     onError: (e: Error) => setToast(e.message),
   })
 
   const cfFilterChips = Object.entries(filters).filter(([k]) => k.startsWith('cf.'))
   const fieldByKey = (k: string) => fields.find((f) => f.key === k.replace(/^cf\./, '').replace(/\[.*\]$/, ''))
-  const opText = (k: string) => ({ gte: '≥', lte: '≤', gt: '>', lt: '<', contains: 'содержит', empty: 'пусто' }[/\[(\w+)\]$/.exec(k)?.[1] ?? ''] ?? ':')
+  const opText = (k: string) => ({ gte: '≥', lte: '≤', gt: '>', lt: '<', contains: tr('содержит'), empty: tr('пусто') }[/\[(\w+)\]$/.exec(k)?.[1] ?? ''] ?? ':')
 
   const all = rows.length > 0 && rows.every((r) => selected.has(r.id))
   return (
     <div className="mx-auto max-w-[1500px] p-4 lg:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[26px] font-bold">Ученики <span className="ml-1 text-lg font-medium text-muted tabular">{total}</span></h1>
+        <h1 className="text-[26px] font-bold">{tr('Ученики')} <span className="ml-1 text-lg font-medium text-muted tabular">{total}</span></h1>
         <div className="flex gap-2">
-          {can('students.import') && <Button onClick={() => setModal('import')}>Импорт</Button>}
-          {can('students.export') && <Button onClick={() => download(`/students/export?format=xlsx&${qs}`).catch((e) => setToast(e.message))}>Экспорт</Button>}
-          {can('students.edit') && <Button variant="primary" onClick={() => setModal('create')}><Plus className="size-4" />Ученик</Button>}
+          {can('students.import') && <Button onClick={() => setModal('import')}>{tr('Импорт')}</Button>}
+          {can('students.export') && <Button onClick={() => download(`/students/export?format=xlsx&${qs}`).catch((e) => setToast(e.message))}>{tr('Экспорт')}</Button>}
+          {can('students.edit') && <Button variant="primary" onClick={() => setModal('create')}><Plus className="size-4" />{tr('Ученик')}</Button>}
         </div>
       </div>
 
       {/* «Виды» — сохранённые наборы фильтров и колонок */}
       <div className="mt-5 flex items-center gap-1 overflow-x-auto border-b border-line">
-        {[{ id: '', name: 'Все' } as View, ...(views.data ?? [])].map((v) => (
+        {[{ id: '', name: tr('Все') } as View, ...(views.data ?? [])].map((v) => (
           <button key={v.id} onClick={() => applyView(v.id ? v : null)}
             className={cx('-mb-px whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium', activeView === v.id ? 'border-brand-600 text-ink' : 'border-transparent text-muted hover:text-ink')}>
             {v.name}
           </button>
         ))}
-        <button onClick={() => setModal('view')} className="ml-2 whitespace-nowrap px-2 pb-2.5 pt-1 text-sm font-medium text-brand-600 hover:underline">+ Сохранить вид</button>
+        <button onClick={() => setModal('view')} className="ml-2 whitespace-nowrap px-2 pb-2.5 pt-1 text-sm font-medium text-brand-600 hover:underline">{tr('+ Сохранить вид')}</button>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Input placeholder="Поиск по ФИО, телефону, ID" className="!h-9 w-60" defaultValue={filters.q ?? ''}
+        <Input placeholder={tr('Поиск по ФИО, телефону, ID')} className="!h-9 w-60" defaultValue={filters.q ?? ''}
           onKeyDown={(e) => e.key === 'Enter' && setFilter('q', (e.target as HTMLInputElement).value)} onBlur={(e) => e.target.value !== (filters.q ?? '') && setFilter('q', e.target.value)} />
         <Select className="!h-9 w-auto" value={filters.status ?? ''} onChange={(e) => setFilter('status', e.target.value)}>
-          <option value="">Статус: все</option>
-          {Object.entries(studentStatus).map(([k, [l]]) => <option key={k} value={k}>Статус: {l}</option>)}
+          <option value="">{tr('Статус: все')}</option>
+          {Object.entries(studentStatus).map(([k, [l]]) => <option key={k} value={k}>{tr('Статус:')} {l}</option>)}
         </Select>
         <Select className="!h-9 w-auto max-w-60" value={filters.course_id ?? ''} onChange={(e) => setFilter('course_id', e.target.value)}>
-          <option value="">Курс: все</option>
-          {courses.data?.map((c) => <option key={c.id} value={c.id}>Курс: {c.name}</option>)}
+          <option value="">{tr('Курс: все')}</option>
+          {courses.data?.map((c) => <option key={c.id} value={c.id}>{tr('Курс:')} {c.name}</option>)}
         </Select>
         {can('finance.view') && (
           <Select className="!h-9 w-auto" value={filters.balance ?? ''} onChange={(e) => setFilter('balance', e.target.value)}>
-            <option value="">Баланс: любой</option><option value="negative">Должники</option><option value="positive">Положительный</option>
+            <option value="">{tr('Баланс: любой')}</option><option value="negative">{tr('Должники')}</option><option value="positive">{tr('Положительный')}</option>
           </Select>
         )}
-        {filters.subscription && <Chip onRemove={() => setFilter('subscription', '')}>Абонемент заканчивается</Chip>}
+        {filters.subscription && <Chip onRemove={() => setFilter('subscription', '')}>{tr('Абонемент заканчивается')}</Chip>}
         {cfFilterChips.map(([k, v]) => {
           const f = fieldByKey(k)
           if (!f) return null
           const shown = f.field_type === 'select' || f.field_type === 'multiselect' ? v.split(',').map((x) => label(f.options.find((o) => o.id === x || o.label.ru === x)?.label) || x).join(', ') : v
-          return <Chip key={k} blue onRemove={() => setFilter(k, '')}>{label(f.label)} {opText(k)} {opText(k) === 'пусто' ? '' : shown}</Chip>
+          return <Chip key={k} blue onRemove={() => setFilter(k, '')}>{label(f.label)} {opText(k)} {k.endsWith('[empty]') ? '' : shown}</Chip>
         })}
-        <button onClick={() => setModal('filter')} className="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-sm text-muted hover:bg-gray-50">+ Фильтр</button>
-        {Object.keys(filters).length > 0 && <button onClick={() => applyView(null)} className="px-2 text-sm text-muted hover:text-ink">Сбросить</button>}
+        <button onClick={() => setModal('filter')} className="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-sm text-muted hover:bg-gray-50">{tr('+ Фильтр')}</button>
+        {Object.keys(filters).length > 0 && <button onClick={() => applyView(null)} className="px-2 text-sm text-muted hover:text-ink">{tr('Сбросить')}</button>}
         <div className="flex-1" />
-        <Button size="sm" onClick={() => setModal('columns')}><SlidersHorizontal className="size-3.5" />Колонки</Button>
+        <Button size="sm" onClick={() => setModal('columns')}><SlidersHorizontal className="size-3.5" />{tr('Колонки')}</Button>
       </div>
 
       {selected.size > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-side px-4 py-2.5 text-sm text-white">
-          <span className="mr-2 font-semibold">Выбрано: {selected.size}</span>
-          <Button size="sm" variant="dark" onClick={() => setModal('bulk-status')}>Изменить статус</Button>
-          <Button size="sm" variant="dark" onClick={() => setModal('bulk-group')}>Перевести в группу</Button>
-          <Button size="sm" variant="dark" onClick={() => setModal('bulk-field')}>Изменить поле</Button>
-          <Button size="sm" variant="dark" disabled title="Массовые рассылки (WhatsApp/SMS) — этап 7 roadmap">Написать родителям</Button>
+          <span className="mr-2 font-semibold">{tr('Выбрано:')} {selected.size}</span>
+          <Button size="sm" variant="dark" onClick={() => setModal('bulk-status')}>{tr('Изменить статус')}</Button>
+          <Button size="sm" variant="dark" onClick={() => setModal('bulk-group')}>{tr('Перевести в группу')}</Button>
+          <Button size="sm" variant="dark" onClick={() => setModal('bulk-field')}>{tr('Изменить поле')}</Button>
+          <Button size="sm" variant="dark" disabled title={tr('Массовые рассылки (WhatsApp/SMS) — этап 7 roadmap')}>{tr('Написать родителям')}</Button>
           <div className="flex-1" />
-          <button onClick={() => setSelected(new Set())} className="text-gray-300 hover:text-white">Снять выбор</button>
+          <button onClick={() => setSelected(new Set())} className="text-gray-300 hover:text-white">{tr('Снять выбор')}</button>
         </div>
       )}
 
@@ -144,9 +144,9 @@ export default function Students() {
               <thead>
                 <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                   <th className="w-10 px-4 py-3"><Checkbox checked={all} onChange={(v) => setSelected(v ? new Set(rows.map((r) => r.id)) : new Set())} /></th>
-                  <th className="px-3 py-3">Ученик</th><th className="px-3 py-3">Статус</th><th className="px-3 py-3">Группа</th>
-                  {can('finance.view') && <th className="px-3 py-3 text-right">Баланс</th>}
-                  <th className="px-3 py-3">Абонемент</th>
+                  <th className="px-3 py-3">{tr('Ученик')}</th><th className="px-3 py-3">{tr('Статус')}</th><th className="px-3 py-3">{tr('Группа')}</th>
+                  {can('finance.view') && <th className="px-3 py-3 text-right">{tr('Баланс')}</th>}
+                  <th className="px-3 py-3">{tr('Абонемент')}</th>
                   {visibleCF.map((f) => <th key={f.key} className="whitespace-nowrap bg-brand-50/60 px-3 py-3 text-brand-700">{label(f.label)}</th>)}
                 </tr>
               </thead>
@@ -166,20 +166,20 @@ export default function Students() {
                 ))}
               </tbody>
             </table>
-            {rows.length === 0 && <div className="py-14 text-center text-sm text-muted">Никого не найдено. Измените фильтры или <button className="text-brand-600" onClick={() => setModal('import')}>импортируйте учеников из Excel</button>.</div>}
+            {rows.length === 0 && <div className="py-14 text-center text-sm text-muted">{tr('Никого не найдено. Измените фильтры или')} <button className="text-brand-600" onClick={() => setModal('import')}>{tr('импортируйте учеников из Excel')}</button>.</div>}
           </div>
         )}
       </div>
       <div className="mt-3 flex items-center justify-between text-[13px] text-muted">
-        <span>Показано {rows.length} из {total}{Object.keys(filters).length ? ' по фильтру' : ''} · синим отмечены пользовательские поля</span>
-        {list.hasNextPage && <Button size="sm" loading={list.isFetchingNextPage} onClick={() => list.fetchNextPage()}>Показать ещё</Button>}
+        <span>{tr('Показано')} {rows.length} {tr('из')} {total}{Object.keys(filters).length ? tr(' по фильтру') : ''} {tr('· синим отмечены пользовательские поля')}</span>
+        {list.hasNextPage && <Button size="sm" loading={list.isFetchingNextPage} onClick={() => list.fetchNextPage()}>{tr('Показать ещё')}</Button>}
       </div>
 
       {modal === 'create' && <StudentFormModal onClose={() => setModal(null)} onCreated={(id) => nav('/students/' + id)} />}
       {modal === 'import' && <ImportModal fields={fields} onClose={() => { setModal(null); qc.invalidateQueries({ queryKey: ['students'] }) }} />}
       {modal === 'filter' && <FilterModal fields={fields} onClose={() => setModal(null)} onApply={(k, v) => { setFilter(k, v); setModal(null) }} />}
       {modal === 'columns' && (
-        <Modal open title="Колонки таблицы" onClose={() => setModal(null)} footer={<Button variant="primary" onClick={() => setModal(null)}>Готово</Button>}>
+        <Modal open title={tr('Колонки таблицы')} onClose={() => setModal(null)} footer={<Button variant="primary" onClick={() => setModal(null)}>{tr('Готово')}</Button>}>
           <div className="space-y-2.5">
             {fields.map((f) => (
               <Checkbox key={f.key} checked={visibleCF.some((x) => x.key === f.key)} label={label(f.label)} onChange={(v) => {
@@ -202,19 +202,19 @@ export default function Students() {
 
 function SubText({ s }: { s: StudentRow }) {
   const sub = s.subscription
-  if (!sub) return <span className="text-muted">не оформлен</span>
-  if (sub.frozen_until) return <span className="text-indigo-700">заморожен до {date(sub.frozen_until).slice(0, 5)}</span>
+  if (!sub) return <span className="text-muted">{tr('не оформлен')}</span>
+  if (sub.frozen_until) return <span className="text-indigo-700">{tr('заморожен до')} {date(sub.frozen_until).slice(0, 5)}</span>
   if (sub.lessons_total) {
     const left = sub.lessons_total - sub.lessons_used
-    return <span className={cx(left <= 2 && 'font-medium text-red-700')}>{left} из {sub.lessons_total}</span>
+    return <span className={cx(left <= 2 && 'font-medium text-red-700')}>{left} {tr('из')} {sub.lessons_total}</span>
   }
-  return <span>{sub.name}{sub.ends_on ? ` до ${date(sub.ends_on).slice(0, 5)}` : ''}</span>
+  return <span>{sub.name}{sub.ends_on ? tr(' до {0}', date(sub.ends_on).slice(0, 5)) : ''}</span>
 }
 
 function Chip({ children, onRemove, blue }: { children: React.ReactNode; onRemove: () => void; blue?: boolean }) {
   return (
     <span className={cx('inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm', blue ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-line bg-white')}>
-      {children}<button onClick={onRemove} aria-label="Убрать фильтр"><X className="size-3.5" /></button>
+      {children}<button onClick={onRemove} aria-label={tr('Убрать фильтр')}><X className="size-3.5" /></button>
     </span>
   )
 }
@@ -237,18 +237,18 @@ function FilterModal({ fields, onClose, onApply }: { fields: CField[]; onClose: 
     onApply(k, v)
   }
   return (
-    <Modal open title="Фильтр по полю" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" onClick={apply}>Применить</Button></>}>
+    <Modal open title={tr('Фильтр по полю')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" onClick={apply}>{tr('Применить')}</Button></>}>
       <div className="space-y-4">
-        <Field label="Поле"><Select value={key} onChange={(e) => setKey(e.target.value)}>{fields.map((x) => <option key={x.key} value={x.key}>{label(x.label)}</option>)}</Select></Field>
+        <Field label={tr('Поле')}><Select value={key} onChange={(e) => setKey(e.target.value)}>{fields.map((x) => <option key={x.key} value={x.key}>{label(x.label)}</option>)}</Select></Field>
         {f && (
-          <Field label="Условие">
+          <Field label={tr('Условие')}>
             <Select value={op} onChange={(e) => setOp(e.target.value)}>
-              {numeric ? <><option value="eq">равно</option><option value="gte">не меньше</option><option value="lte">не больше</option></> :
-                f.field_type === 'date' ? <><option value="gte">после (включительно)</option><option value="lte">до (включительно)</option></> :
-                ['string', 'text', 'phone', 'email'].includes(f.field_type) ? <><option value="contains">содержит</option><option value="eq">равно</option></> :
-                f.field_type === 'multiselect' ? <><option value="any">любой из</option><option value="all">все из</option></> :
-                <option value="eq">{f.field_type === 'select' ? 'один из' : 'равно'}</option>}
-              <option value="empty">пусто</option>
+              {numeric ? <><option value="eq">{tr('равно')}</option><option value="gte">{tr('не меньше')}</option><option value="lte">{tr('не больше')}</option></> :
+                f.field_type === 'date' ? <><option value="gte">{tr('после (включительно)')}</option><option value="lte">{tr('до (включительно)')}</option></> :
+                ['string', 'text', 'phone', 'email'].includes(f.field_type) ? <><option value="contains">{tr('содержит')}</option><option value="eq">{tr('равно')}</option></> :
+                f.field_type === 'multiselect' ? <><option value="any">{tr('любой из')}</option><option value="all">{tr('все из')}</option></> :
+                <option value="eq">{f.field_type === 'select' ? tr('один из') : tr('равно')}</option>}
+              <option value="empty">{tr('пусто')}</option>
             </Select>
           </Field>
         )}
@@ -259,8 +259,8 @@ function FilterModal({ fields, onClose, onApply }: { fields: CField[]; onClose: 
                 className={cx('rounded-full border px-2.5 py-1 text-xs font-medium', multi.includes(o.id) ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-line')}>{label(o.label)}</button>)}
             </div>
           ) : f.field_type === 'boolean' ? (
-            <Select value={value} onChange={(e) => setValue(e.target.value)}><option value="">—</option><option value="true">Да</option><option value="false">Нет</option></Select>
-          ) : <Field label="Значение"><Input type={f.field_type === 'date' ? 'date' : numeric ? 'number' : 'text'} value={value} onChange={(e) => setValue(e.target.value)} /></Field>
+            <Select value={value} onChange={(e) => setValue(e.target.value)}><option value="">—</option><option value="true">{tr('Да')}</option><option value="false">{tr('Нет')}</option></Select>
+          ) : <Field label={tr('Значение')}><Input type={f.field_type === 'date' ? 'date' : numeric ? 'number' : 'text'} value={value} onChange={(e) => setValue(e.target.value)} /></Field>
         )}
       </div>
     </Modal>
@@ -273,10 +273,10 @@ function SaveViewModal({ filters, columns, onClose, onSaved }: { filters: Record
   const [shared, setShared] = useState(false)
   const m = useMutation({ mutationFn: () => api.post<{ id: string }>('/saved-views', { entity_type: 'student', name, shared, config: { filters, columns } }), onSuccess: (r) => onSaved(r.id) })
   return (
-    <Modal open title="Сохранить вид" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={m.isPending} disabled={!name.trim()} onClick={() => m.mutate()}>Сохранить</Button></>}>
-      <Field label="Название"><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, ЕНТ · 11 класс" /></Field>
-      <div className="mt-2 text-xs text-muted">Сохранятся текущие фильтры ({Object.keys(filters).filter((k) => STD_FILTERS.includes(k) || k.startsWith('cf.')).length}) и колонки ({columns.length}).</div>
-      {can('settings.manage') && <div className="mt-4"><Checkbox checked={shared} onChange={setShared} label="Общий вид для всей организации" /></div>}
+    <Modal open title={tr('Сохранить вид')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" loading={m.isPending} disabled={!name.trim()} onClick={() => m.mutate()}>{tr('Сохранить')}</Button></>}>
+      <Field label={tr('Название')}><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={tr('Например, ЕНТ · 11 класс')} /></Field>
+      <div className="mt-2 text-xs text-muted">{tr('Сохранятся текущие фильтры (')}{Object.keys(filters).filter((k) => STD_FILTERS.includes(k) || k.startsWith('cf.')).length}{tr(') и колонки (')}{columns.length}).</div>
+      {can('settings.manage') && <div className="mt-4"><Checkbox checked={shared} onChange={setShared} label={tr('Общий вид для всей организации')} /></div>}
     </Modal>
   )
 }
@@ -284,7 +284,7 @@ function SaveViewModal({ filters, columns, onClose, onSaved }: { filters: Record
 function BulkStatus({ onClose, onApply, busy }: { onClose: () => void; onApply: (v: string) => void; busy: boolean }) {
   const [v, setV] = useState('active')
   return (
-    <Modal open title="Изменить статус" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={busy} onClick={() => onApply(v)}>Применить</Button></>}>
+    <Modal open title={tr('Изменить статус')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" loading={busy} onClick={() => onApply(v)}>{tr('Применить')}</Button></>}>
       <Select value={v} onChange={(e) => setV(e.target.value)}>{Object.entries(studentStatus).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}</Select>
     </Modal>
   )
@@ -294,12 +294,12 @@ function BulkGroup({ onClose, onApply, busy }: { onClose: () => void; onApply: (
   const groups = useQuery({ queryKey: ['groups', 'all-active'], queryFn: () => api.get<Group[]>('/groups') })
   const [v, setV] = useState('')
   return (
-    <Modal open title="Перевести в группу" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={!v} loading={busy} onClick={() => onApply(v)}>Перевести</Button></>}>
+    <Modal open title={tr('Перевести в группу')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" disabled={!v} loading={busy} onClick={() => onApply(v)}>{tr('Перевести')}</Button></>}>
       <Select value={v} onChange={(e) => setV(e.target.value)}>
-        <option value="">Выберите группу</option>
+        <option value="">{tr('Выберите группу')}</option>
         {groups.data?.map((g) => <option key={g.id} value={g.id}>{g.name} · {g.students}/{g.capacity ?? '∞'}</option>)}
       </Select>
-      <p className="mt-2 text-xs text-muted">Ученики выйдут из текущих групп того же курса (причина — «перевод»), история членства сохранится.</p>
+      <p className="mt-2 text-xs text-muted">{tr('Ученики выйдут из текущих групп того же курса (причина — «перевод»), история членства сохранится.')}</p>
     </Modal>
   )
 }
@@ -309,8 +309,8 @@ function BulkField({ fields, onClose, onApply, busy }: { fields: CField[]; onClo
   const [value, setValue] = useState<unknown>(null)
   const f = fields.find((x) => x.key === key)
   return (
-    <Modal open title="Изменить поле" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={busy} onClick={() => onApply(key, value)}>Применить</Button></>}>
-      <Field label="Поле"><Select value={key} onChange={(e) => { setKey(e.target.value); setValue(null) }}>{fields.map((x) => <option key={x.key} value={x.key}>{label(x.label)}</option>)}</Select></Field>
+    <Modal open title={tr('Изменить поле')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" loading={busy} onClick={() => onApply(key, value)}>{tr('Применить')}</Button></>}>
+      <Field label={tr('Поле')}><Select value={key} onChange={(e) => { setKey(e.target.value); setValue(null) }}>{fields.map((x) => <option key={x.key} value={x.key}>{label(x.label)}</option>)}</Select></Field>
       {f && <div className="mt-4"><BulkInput f={f} value={value} onChange={setValue} /></div>}
     </Modal>
   )

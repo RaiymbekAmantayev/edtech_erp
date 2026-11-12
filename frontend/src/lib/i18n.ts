@@ -1,5 +1,6 @@
 // Локализация интерфейса: RU (основной), KZ, EN. Тексты без перевода показываются на русском.
 import { useSyncExternalStore } from 'react'
+import kk from './i18n.kk'
 
 export type Lang = 'ru' | 'kk' | 'en'
 
@@ -31,15 +32,34 @@ const dict: Record<string, Partial<Record<Lang, string>>> = {
   'dash.hello': { kk: 'Қайырлы күн', en: 'Good afternoon' },
 }
 
-let lang: Lang = (localStorage.getItem('emp.lang') as Lang) || 'ru'
+const stored = (() => { try { return localStorage.getItem('emp.lang') as Lang | null } catch { return null } })()
+// без сохранённого выбора — язык браузера/Telegram (kk → казахский), иначе русский
+let lang: Lang = stored || (navigator.language?.toLowerCase().startsWith('kk') ? 'kk' : 'ru')
+document.documentElement.lang = lang
 const subs = new Set<() => void>()
 
+export const getLang = () => lang
+
+// Смена языка перезагружает страницу: так переводятся и тексты, вычисленные при загрузке модулей (статусы, меню, справочники).
 export function setLang(l: Lang) {
+  if (l === lang) return
   lang = l
-  localStorage.setItem('emp.lang', l)
-  document.documentElement.lang = l === 'kk' ? 'kk' : l
+  try { localStorage.setItem('emp.lang', l) } catch { /* приватный режим */ }
+  document.documentElement.lang = l
   subs.forEach((s) => s())
+  window.location.reload()
 }
+
+// tr('Текст на русском', ...аргументы) — перевод по русскому тексту; {0}, {1} подставляются из аргументов.
+// Нет перевода — показывается русский текст. Словарь KZ: i18n.kk.ts (проверка полноты: node scripts/i18n-check.mjs).
+export function tr(ru: string, ...args: unknown[]): string {
+  let s = lang === 'kk' ? kk[ru] ?? ru : ru
+  for (let i = 0; i < args.length; i++) s = s.split(`{${i}}`).join(String(args[i] ?? ''))
+  return s
+}
+
+// Локаль для дат и чисел (Intl).
+export const intlLocale = () => (lang === 'kk' ? 'kk-KZ' : lang === 'en' ? 'en-GB' : 'ru-RU')
 
 export function useLang(): [Lang, (key: string, ru: string) => string] {
   const l = useSyncExternalStore((cb) => { subs.add(cb); return () => subs.delete(cb) }, () => lang)

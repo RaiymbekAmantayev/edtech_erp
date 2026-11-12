@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth'
 import { date, isoDay } from '../lib/format'
 import { autoGrade, gradeStyle, lessonModeLabel, num, summarize, type GradeRef, type LessonMode, type TestConfig, type TestResult } from '../lib/tests'
 import { Button, Card, Empty, Field, Input, Modal, Select, Spinner, Textarea, cx } from './ui'
+import { tr } from '../lib/i18n'
 
 export const GradeChip = ({ g, className }: { g: GradeRef | null | undefined; className?: string }) =>
   g ? <span className={cx('inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap', className)} style={gradeStyle(g.color)}>{g.name}</span> : null
@@ -17,8 +18,8 @@ export function ResultRow({ r, onDelete, showStudent }: { r: TestResult; onDelet
           <div className="flex flex-wrap items-center gap-2 font-medium">{showStudent ? r.student : r.test_type}<GradeChip g={r.grade} /></div>
           <div className="mt-0.5 text-[13px] text-muted">{[date(r.taken_on), showStudent && r.test_type, r.group, r.teacher].filter(Boolean).join(' · ')}</div>
         </div>
-        {r.percent != null && <div className="text-right tabular"><div className="text-[17px] font-bold">{num(r.percent)}%</div><div className="text-xs text-muted">{num(r.total_score)} из {num(r.max_score)}</div></div>}
-        {onDelete && <Button size="sm" variant="ghost" className="!text-red-600" onClick={onDelete}>Удалить</Button>}
+        {r.percent != null && <div className="text-right tabular"><div className="text-[17px] font-bold">{num(r.percent)}%</div><div className="text-xs text-muted">{num(r.total_score)} {tr('из')} {num(r.max_score)}</div></div>}
+        {onDelete && <Button size="sm" variant="ghost" className="!text-red-600" onClick={onDelete}>{tr('Удалить')}</Button>}
       </div>
       {r.scores.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -45,10 +46,10 @@ export function StudentTests({ studentId, groups }: { studentId: string; groups:
   const canDelete = (r: TestResult) => can('students.edit') || r.created_by === me?.user.id
   return (
     <>
-      <Card className="mt-6" title="Результаты тестов" bodyClass="!px-0 !pb-0" action={can('tests.conduct') && <Button variant="primary" size="sm" onClick={() => setOpen(true)}>+ Внести результат</Button>}>
-        {!q.data ? <Spinner /> : q.data.length === 0 ? <Empty title="Тестов пока нет" text="Результаты, внесённые здесь или преподавателем в Telegram, появятся в этом списке." /> : (
+      <Card className="mt-6" title={tr('Результаты тестов')} bodyClass="!px-0 !pb-0" action={can('tests.conduct') && <Button variant="primary" size="sm" onClick={() => setOpen(true)}>{tr('+ Внести результат')}</Button>}>
+        {!q.data ? <Spinner /> : q.data.length === 0 ? <Empty title={tr('Тестов пока нет')} text={tr('Результаты, внесённые здесь или преподавателем в Telegram, появятся в этом списке.')} /> : (
           <div className="divide-y divide-line border-t border-line">
-            {q.data.map((r) => <ResultRow key={r.id} r={r} onDelete={canDelete(r) ? () => { if (confirm('Удалить результат теста?')) del.mutate(r.id) } : undefined} />)}
+            {q.data.map((r) => <ResultRow key={r.id} r={r} onDelete={canDelete(r) ? () => { if (confirm(tr('Удалить результат теста?'))) del.mutate(r.id) } : undefined} />)}
           </div>
         )}
       </Card>
@@ -82,25 +83,25 @@ function ResultModal({ studentId, groups, onClose, onSaved }: { studentId: strin
       }],
     }),
     onSuccess: onSaved,
-    onError: (e) => setError(e instanceof ApiError && e.fields.some((f) => f.code === 'TOO_LARGE') ? 'Балл больше максимального для навыка' : e instanceof ApiError && e.fields.some((f) => f.field.endsWith('.scores')) ? 'Заполните хотя бы один навык' : (e as Error).message),
+    onError: (e) => setError(e instanceof ApiError && e.fields.some((f) => f.code === 'TOO_LARGE') ? tr('Балл больше максимального для навыка') : e instanceof ApiError && e.fields.some((f) => f.field.endsWith('.scores')) ? tr('Заполните хотя бы один навык') : (e as Error).message),
   })
   const filled = type ? (type.scoring === 'score' ? (sum?.filled ?? 0) > 0 : Object.values(scores).some(Boolean)) || !!grade : false
   return (
-    <Modal open onClose={onClose} title="Результат теста" wide
-      footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={save.isPending} disabled={!type || !filled} onClick={() => { setError(''); save.mutate() }}>Сохранить</Button></>}>
-      {!cfg.data ? <Spinner /> : types.length === 0 ? <div className="py-6 text-center text-sm text-muted">Типы тестов не настроены. Администратор добавляет их в «Настройки → Тестирование».</div> : (
+    <Modal open onClose={onClose} title={tr('Результат теста')} wide
+      footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" loading={save.isPending} disabled={!type || !filled} onClick={() => { setError(''); save.mutate() }}>{tr('Сохранить')}</Button></>}>
+      {!cfg.data ? <Spinner /> : types.length === 0 ? <div className="py-6 text-center text-sm text-muted">{tr('Типы тестов не настроены. Администратор добавляет их в «Настройки → Тестирование».')}</div> : (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Тип теста" required className="sm:col-span-3">
+            <Field label={tr('Тип теста')} required className="sm:col-span-3">
               <Select value={typeId} onChange={(e) => { setTypeId(e.target.value); setScores({}) }}>
-                <option value="">Выберите тест</option>
+                <option value="">{tr('Выберите тест')}</option>
                 {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </Select>
             </Field>
-            <Field label="Дата" required><Input type="date" value={day} max={isoDay()} onChange={(e) => setDay(e.target.value)} /></Field>
-            <Field label="Группа" className="sm:col-span-2">
+            <Field label={tr('Дата')} required><Input type="date" value={day} max={isoDay()} onChange={(e) => setDay(e.target.value)} /></Field>
+            <Field label={tr('Группа')} className="sm:col-span-2">
               <Select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-                <option value="">Без группы</option>
+                <option value="">{tr('Без группы')}</option>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </Select>
             </Field>
@@ -115,7 +116,7 @@ function ResultModal({ studentId, groups, onClose, onSaved }: { studentId: strin
                     {type.scoring === 'score' ? (
                       <label className="flex items-center gap-2 text-sm text-muted">
                         <Input className="!w-20 text-right" inputMode="decimal" value={scores[s.skill_id] ?? ''} invalid={Number((scores[s.skill_id] ?? '').replace(',', '.')) > s.max_score}
-                          onChange={(e) => setScores({ ...scores, [s.skill_id]: e.target.value })} />из {num(s.max_score)}
+                          onChange={(e) => setScores({ ...scores, [s.skill_id]: e.target.value })} />{tr('из')} {num(s.max_score)}
                       </label>
                     ) : (
                       <Select className="!w-44" value={scores[s.skill_id] ?? ''} onChange={(e) => setScores({ ...scores, [s.skill_id]: e.target.value })}>
@@ -127,13 +128,13 @@ function ResultModal({ studentId, groups, onClose, onSaved }: { studentId: strin
                 ))}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Итоговая оценка" hint={type.scoring === 'score' ? (sum?.percent != null ? `${num(sum.total)} из ${num(sum.max)} — ${num(sum.percent)}%${auto ? `, по порогам: ${auto.name}` : ''}` : 'Рассчитается по баллам') : undefined}>
+                <Field label={tr('Итоговая оценка')} hint={type.scoring === 'score' ? (sum?.percent != null ? tr('{0} из {1} — {2}%{3}', num(sum.total), num(sum.max), num(sum.percent), auto ? tr(', по порогам: {0}', auto.name) : '') : tr('Рассчитается по баллам')) : undefined}>
                   <Select value={grade} onChange={(e) => setGrade(e.target.value)}>
-                    <option value="">{type.scoring === 'score' ? 'Автоматически' : 'Без итоговой оценки'}</option>
+                    <option value="">{type.scoring === 'score' ? tr('Автоматически') : tr('Без итоговой оценки')}</option>
                     {grades.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </Select>
                 </Field>
-                <Field label="Комментарий"><Textarea rows={2} className="!min-h-10" value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
+                <Field label={tr('Комментарий')}><Textarea rows={2} className="!min-h-10" value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
               </div>
             </>
           )}

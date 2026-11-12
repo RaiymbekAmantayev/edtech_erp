@@ -5,6 +5,7 @@ package payroll
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -14,6 +15,54 @@ import (
 )
 
 var PayTypes = map[string]string{"fixed": "Оклад", "per_lesson": "За занятие", "hourly": "Почасовая", "percent": "Процент", "mixed": "Комбинированная"}
+
+// Settings — настройки расчёта зарплаты школы (tenants.settings -> 'payroll').
+// Какие статусы посещения оплачиваются преподавателю, хранится отдельно: attendance_charge_rules.pay_teacher.
+type Settings struct {
+	ShowToTeachers  bool   `json:"show_to_teachers"` // показывать начисления в кабинете преподавателя (можно переопределить в карточке)
+	MinStudents     int    `json:"min_students"`     // минимум оплачиваемых учеников на уроке, 0 — без ограничения
+	BelowMin        string `json:"below_min"`        // если учеников меньше минимума: zero — не начислять, min_amount — фиксированная сумма
+	MinAmountTiyn   int64  `json:"min_amount_tiyn"`
+	Substitute      string `json:"substitute"`       // оплата замены: own — по ставке заменяющего, original — по ставке основного преподавателя,
+	SubstituteValue int64  `json:"substitute_value"` // fixed — фиксированная сумма за урок (тиын), coef — процент от начисления по своей ставке (100 = как есть)
+}
+
+var (
+	BelowMinModes   = []string{"zero", "min_amount"}
+	SubstituteModes = []string{"own", "original", "fixed", "coef"}
+)
+
+func DefaultSettings() Settings {
+	return Settings{ShowToTeachers: true, BelowMin: "zero", Substitute: "own", SubstituteValue: 100}
+}
+
+// LoadSettings читает настройки школы текущей организации; незаданные поля берутся по умолчанию.
+func LoadSettings(ctx context.Context, tx pgx.Tx) (Settings, error) {
+	s := DefaultSettings()
+	var raw []byte
+	if err := tx.QueryRow(ctx, `SELECT settings->'payroll' FROM tenants WHERE id = app_current_tenant()`).Scan(&raw); err != nil && err != pgx.ErrNoRows {
+		return s, err
+	}
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return DefaultSettings(), nil
+		}
+	}
+	return s, nil
+}
+
+// Visible — видит ли преподаватель свои начисления в кабинете: настройка в карточке, иначе настройка школы.
+func Visible(ctx context.Context, tx pgx.Tx, employeeID string) (bool, error) {
+	var own *bool
+	if err := tx.QueryRow(ctx, `SELECT payroll_visible FROM employees WHERE id=$1`, employeeID).Scan(&own); err != nil {
+		return false, err
+	}
+	if own != nil {
+		return *own, nil
+	}
+	s, err := LoadSettings(ctx, tx)
+	return s.ShowToTeachers, err
+}
 
 // Recalc пересчитывает начисление за урок. refreshRate=false сохраняет ставку, зафиксированную при закрытии урока
 // (если преподаватель не менялся); true — берёт текущие условия оплаты из карточки преподавателя.
@@ -31,16 +80,29 @@ func Recalc(ctx context.Context, tx pgx.Tx, lessonID string, refreshRate bool) e
 		_, err := tx.Exec(ctx, `DELETE FROM teacher_accruals WHERE lesson_id=$1`, lessonID)
 		return err
 	}
+	set, err := LoadSettings(ctx, tx)
+	if err != nil {
+		return err
+	}
 	var payType string
 	var rate int64
+	var pct int
 	var oldTeacher string
-	err := tx.QueryRow(ctx, `SELECT pay_type, rate_tiyn, teacher_id::text FROM teacher_accruals WHERE lesson_id=$1`, lessonID).Scan(&payType, &rate, &oldTeacher)
+	err = tx.QueryRow(ctx, `SELECT pay_type, rate_tiyn, pay_percent, teacher_id::text FROM teacher_accruals WHERE lesson_id=$1`, lessonID).Scan(&payType, &rate, &pct, &oldTeacher)
 	if err != nil && err != pgx.ErrNoRows {
 		return err
 	}
 	if err == pgx.ErrNoRows || refreshRate || oldTeacher != *teacherID {
-		if err := tx.QueryRow(ctx, `SELECT pay_type, pay_rate_tiyn FROM employees WHERE id=$1`, *teacherID).Scan(&payType, &rate); err != nil {
+		// условия оплаты фиксируются при закрытии урока; для замены — по правилу из настроек школы
+		payFrom := *teacherID
+		if substituteFor != nil && set.Substitute == "original" {
+			payFrom = *substituteFor
+		}
+		if err := tx.QueryRow(ctx, `SELECT pay_type, pay_rate_tiyn, pay_percent FROM employees WHERE id=$1`, payFrom).Scan(&payType, &rate, &pct); err != nil {
 			return err
+		}
+		if substituteFor != nil && set.Substitute == "fixed" {
+			payType, rate, pct = "per_lesson", set.SubstituteValue, 0
 		}
 	}
 	// отметки урока и правила «оплачивается преподавателю»
@@ -63,26 +125,50 @@ func Recalc(ctx context.Context, tx pgx.Tx, lessonID string, refreshRate bool) e
 		revenue = 0
 	}
 	minutes := int(math.Round(ends.Sub(starts).Minutes()))
-	amount, formula := Compute(payType, rate, minutes, c.paid, revenue)
-	if c.paid == 0 && payType != "fixed" {
-		formula = "Нет учеников со статусом, который оплачивается преподавателю (Настройки → Правила списания)"
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO teacher_accruals (lesson_id, tenant_id, teacher_id, branch_id, group_id, starts_at, minutes, pay_type, rate_tiyn,
+	amount, formula := Apply(set, payType, rate, pct, minutes, c.paid, revenue, substituteFor != nil)
+	_, err = tx.Exec(ctx, `INSERT INTO teacher_accruals (lesson_id, tenant_id, teacher_id, branch_id, group_id, starts_at, minutes, pay_type, rate_tiyn, pay_percent,
 			students_total, students_paid, present, late, absent, excused, trial, revenue_tiyn, amount_tiyn, formula, substitute_for, calculated_at)
-		VALUES ($1, app_current_tenant(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
+		VALUES ($1, app_current_tenant(), $2, $3, $4, $5, $6, $7, $8, $20, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
 		ON CONFLICT (lesson_id) DO UPDATE SET teacher_id=EXCLUDED.teacher_id, branch_id=EXCLUDED.branch_id, group_id=EXCLUDED.group_id,
-			starts_at=EXCLUDED.starts_at, minutes=EXCLUDED.minutes, pay_type=EXCLUDED.pay_type, rate_tiyn=EXCLUDED.rate_tiyn,
+			starts_at=EXCLUDED.starts_at, minutes=EXCLUDED.minutes, pay_type=EXCLUDED.pay_type, rate_tiyn=EXCLUDED.rate_tiyn, pay_percent=EXCLUDED.pay_percent,
 			students_total=EXCLUDED.students_total, students_paid=EXCLUDED.students_paid, present=EXCLUDED.present, late=EXCLUDED.late,
 			absent=EXCLUDED.absent, excused=EXCLUDED.excused, trial=EXCLUDED.trial, revenue_tiyn=EXCLUDED.revenue_tiyn,
 			amount_tiyn=EXCLUDED.amount_tiyn, formula=EXCLUDED.formula, substitute_for=EXCLUDED.substitute_for, calculated_at=NOW()`,
 		lessonID, *teacherID, branchID, groupID, starts, minutes, payType, rate, c.total, c.paid, c.present, c.late, c.absent, c.excused, c.trial,
-		revenue, amount, formula, substituteFor)
+		revenue, amount, formula, substituteFor, pct)
 	return err
 }
 
-// Compute — сумма и понятная формула начисления за урок.
+// Apply — начисление за урок с учётом настроек школы: минимум учеников и коэффициент за замену.
+func Apply(s Settings, payType string, rate int64, pct, minutes, paid int, revenue int64, substitute bool) (int64, string) {
+	if payType == "fixed" {
+		return Compute(payType, rate, pct, minutes, paid, revenue)
+	}
+	var amount int64
+	var formula string
+	switch {
+	case s.MinStudents > 0 && paid < s.MinStudents && s.BelowMin == "min_amount":
+		amount = s.MinAmountTiyn
+		formula = fmt.Sprintf("Оплачиваемых учеников %d — меньше минимума %d: минимальная оплата %s", paid, s.MinStudents, Money(amount))
+	case s.MinStudents > 0 && paid < s.MinStudents:
+		formula = fmt.Sprintf("Оплачиваемых учеников %d — меньше минимума %d: урок не оплачивается (Настройки → Зарплата)", paid, s.MinStudents)
+	case paid == 0:
+		formula = "Нет учеников со статусом, который оплачивается преподавателю (Настройки → Зарплата)"
+	default:
+		amount, formula = Compute(payType, rate, pct, minutes, paid, revenue)
+	}
+	if substitute && s.Substitute == "coef" && s.SubstituteValue != 100 && amount > 0 {
+		full := amount
+		amount = int64(math.Round(float64(full) * float64(s.SubstituteValue) / 100))
+		formula = fmt.Sprintf("%s; замена: %s × %d%% = %s", formula, Money(full), s.SubstituteValue, Money(amount))
+	}
+	return amount, formula
+}
+
+// Compute — сумма и понятная формула начисления за урок без учёта настроек школы.
 // percent: ставка хранится как процент × 100 (4000 = 40%) от выручки урока.
-func Compute(payType string, rate int64, minutes, paid int, revenue int64) (int64, string) {
+// mixed: ставка за занятие + pct (процент × 100) от выручки урока.
+func Compute(payType string, rate int64, pct, minutes, paid int, revenue int64) (int64, string) {
 	if payType == "fixed" {
 		return 0, "Оклад " + Money(rate) + " в месяц — за занятия отдельно не начисляется"
 	}
@@ -96,7 +182,14 @@ func Compute(payType string, rate int64, minutes, paid int, revenue int64) (int6
 	case "percent":
 		amount := int64(math.Round(float64(revenue) * float64(rate) / 10000))
 		return amount, fmt.Sprintf("%s%% от стоимости урока %s = %s", percent(rate), Money(revenue), Money(amount))
-	default: // per_lesson, mixed
+	case "mixed":
+		if pct <= 0 {
+			return rate, "Ставка за занятие " + Money(rate)
+		}
+		part := int64(math.Round(float64(revenue) * float64(pct) / 10000))
+		amount := rate + part
+		return amount, fmt.Sprintf("Ставка за занятие %s + %s%% от стоимости урока %s (%s) = %s", Money(rate), percent(int64(pct)), Money(revenue), Money(part), Money(amount))
+	default: // per_lesson
 		return rate, "Ставка за занятие " + Money(rate)
 	}
 }

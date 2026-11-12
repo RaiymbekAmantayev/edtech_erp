@@ -8,6 +8,7 @@ import { num, type TestConfig, type TestResult } from '../lib/tests'
 import type { Employee, Group } from '../lib/types'
 import { GradeChip } from '../components/Tests'
 import { Button, Card, Empty, Field, Input, Select, Spinner, Stat } from '../components/ui'
+import { tr } from '../lib/i18n'
 
 // Результаты всех тестов учеников: за уроки и внесённые вручную, с фильтрами и выгрузкой в Excel.
 export default function TestResults() {
@@ -28,60 +29,60 @@ export default function TestResults() {
     <div className="space-y-5 p-4 lg:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-bold">Тесты учеников</h1>
-          <p className="mt-1 text-sm text-muted">Все результаты: баллы за уроки из отметки посещаемости и тесты, внесённые в карточке ученика.</p>
+          <h1 className="text-[22px] font-bold">{tr('Тесты учеников')}</h1>
+          <p className="mt-1 text-sm text-muted">{tr('Все результаты: баллы за уроки из отметки посещаемости и тесты, внесённые в карточке ученика.')}</p>
         </div>
-        <Button onClick={exportXlsx} loading={busy} disabled={!rows.length}><Download className="size-4" />Выгрузить в Excel</Button>
+        <Button onClick={exportXlsx} loading={busy} disabled={!rows.length}><Download className="size-4" />{tr('Выгрузить в Excel')}</Button>
       </div>
 
       <Card>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <Field label="С"><Input type="date" value={f.from} onChange={(e) => set('from', e.target.value)} /></Field>
-          <Field label="По"><Input type="date" value={f.to} onChange={(e) => set('to', e.target.value)} /></Field>
-          <Field label="Тест">
+          <Field label={tr('С')}><Input type="date" value={f.from} onChange={(e) => set('from', e.target.value)} /></Field>
+          <Field label={tr('По')}><Input type="date" value={f.to} onChange={(e) => set('to', e.target.value)} /></Field>
+          <Field label={tr('Тест')}>
             <Select value={f.test_type_id} onChange={(e) => set('test_type_id', e.target.value)}>
-              <option value="">Все тесты</option>
-              {cfg.data?.types.map((t) => <option key={t.id} value={t.id}>{t.name}{t.archived ? ' (архив)' : ''}</option>)}
+              <option value="">{tr('Все тесты')}</option>
+              {cfg.data?.types.map((t) => <option key={t.id} value={t.id}>{t.name}{t.archived ? tr(' (архив)') : ''}</option>)}
             </Select>
           </Field>
-          <Field label="Группа">
+          <Field label={tr('Группа')}>
             <Select value={f.group_id} onChange={(e) => set('group_id', e.target.value)}>
-              <option value="">Все группы</option>
+              <option value="">{tr('Все группы')}</option>
               {groups.data?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </Select>
           </Field>
-          <Field label="Преподаватель">
+          <Field label={tr('Преподаватель')}>
             <Select value={f.teacher_id} onChange={(e) => set('teacher_id', e.target.value)}>
-              <option value="">Все</option>
+              <option value="">{tr('Все')}</option>
               {teachers.data?.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
             </Select>
           </Field>
-          <Field label="Где внесён">
+          <Field label={tr('Где внесён')}>
             <Select value={f.source} onChange={(e) => set('source', e.target.value)}>
-              <option value="">Везде</option><option value="lesson">На уроке</option><option value="manual">В карточке</option>
+              <option value="">{tr('Везде')}</option><option value="lesson">{tr('На уроке')}</option><option value="manual">{tr('В карточке')}</option>
             </Select>
           </Field>
-          <Field label="Ученик"><Input value={f.q} onChange={(e) => set('q', e.target.value)} placeholder="Поиск по ФИО" /></Field>
+          <Field label={tr('Ученик')}><Input value={f.q} onChange={(e) => set('q', e.target.value)} placeholder={tr('Поиск по ФИО')} /></Field>
         </div>
       </Card>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Результатов" value={rows.length} />
-        <Stat label="Учеников" value={new Set(rows.map((r) => r.student_id)).size} />
-        <Stat label="Средний процент" value={avg != null ? `${num(Math.round(avg * 10) / 10)}%` : '—'} />
+        <Stat label={tr('Результатов')} value={rows.length} />
+        <Stat label={tr('Учеников')} value={new Set(rows.map((r) => r.student_id)).size} />
+        <Stat label={tr('Средний процент')} value={avg != null ? `${num(Math.round(avg * 10) / 10)}%` : '—'} />
       </div>
 
       <Card bodyClass="!p-0">
-        {!list.data ? <Spinner /> : rows.length === 0 ? <Empty title="Результатов нет" text="Измените период или фильтры." /> : (
+        {!list.data ? <Spinner /> : rows.length === 0 ? <Empty title={tr('Результатов нет')} text={tr('Измените период или фильтры.')} /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-                {['Дата', 'Ученик', 'Тест', 'Группа · преподаватель', 'По навыкам', 'Итог'].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3">{h}</th>)}
+                {[tr('Дата'), tr('Ученик'), tr('Тест'), tr('Группа · преподаватель'), tr('По навыкам'), tr('Итог')].map((h) => <th key={h} className="whitespace-nowrap px-4 py-3">{h}</th>)}
               </tr></thead>
               <tbody className="divide-y divide-line">
                 {rows.map((r) => (
                   <tr key={r.id} className="align-top">
-                    <td className="whitespace-nowrap px-4 py-3 tabular">{date(r.taken_on)}{r.lesson_id && <div className="text-[11px] text-muted">на уроке</div>}</td>
+                    <td className="whitespace-nowrap px-4 py-3 tabular">{date(r.taken_on)}{r.lesson_id && <div className="text-[11px] text-muted">{tr('на уроке')}</div>}</td>
                     <td className="px-4 py-3"><Link to={`/students/${r.student_id}`} className="font-medium text-brand-700 hover:underline">{r.student}</Link></td>
                     <td className="px-4 py-3">{r.test_type}</td>
                     <td className="px-4 py-3 text-[13px] text-muted">{[r.group, r.teacher].filter(Boolean).join(' · ') || '—'}</td>
@@ -103,7 +104,7 @@ export default function TestResults() {
                 ))}
               </tbody>
             </table>
-            {rows.length >= 1000 && <div className="border-t border-line px-4 py-2 text-xs text-muted">Показаны первые 1000 результатов — сузьте период или выгрузите в Excel.</div>}
+            {rows.length >= 1000 && <div className="border-t border-line px-4 py-2 text-xs text-muted">{tr('Показаны первые 1000 результатов — сузьте период или выгрузите в Excel.')}</div>}
           </div>
         )}
       </Card>

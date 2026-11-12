@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Bell, CalendarDays, CheckSquare, ClipboardCheck, CreditCard, Filter, GraduationCap, Home, LayoutGrid, LogOut, Plus, Search, Settings, BarChart3, UserRound, Users, Menu, Wallet } from 'lucide-react'
 import { useAuth } from '../lib/auth'
-import { setLang, useLang, type Lang } from '../lib/i18n'
+import { setLang, useLang, type Lang, tr, intlLocale } from '../lib/i18n'
 import { api } from '../lib/api'
 import { cx, Select } from './ui'
 import { SearchPalette } from './SearchPalette'
@@ -16,7 +16,7 @@ export function Logo({ name, platform }: { name?: string; platform?: boolean }) 
     <div className="flex items-center gap-2.5">
       <div className={cx('flex size-9 items-center justify-center rounded-lg text-sm font-bold text-white', platform ? 'bg-platform' : 'bg-brand-600')}>E</div>
       <div className="leading-tight">
-        <div className="text-[15px] font-semibold text-white">EMP{platform && <span className="ml-1 font-normal text-teal-300">Платформа</span>}</div>
+        <div className="text-[15px] font-semibold text-white">EMP{platform && <span className="ml-1 font-normal text-teal-300">{tr('Платформа')}</span>}</div>
         <div className="max-w-36 truncate text-xs text-gray-400">{platform ? 'Super Admin' : name}</div>
       </div>
     </div>
@@ -79,7 +79,7 @@ export default function Layout() {
       </nav>
       {me?.tenant?.status === 'trial' && me.tenant.trial_ends_at && (
         <div className="mx-1 rounded-lg bg-white/5 p-3 text-xs text-gray-300">
-          Пробный период до {new Date(me.tenant.trial_ends_at).toLocaleDateString('ru-RU')}
+          {tr('Пробный период до')} {new Date(me.tenant.trial_ends_at).toLocaleDateString(intlLocale())}
         </div>
       )}
     </aside>
@@ -91,7 +91,7 @@ export default function Layout() {
       {mobileNav && <div className="fixed inset-0 z-40 flex bg-black/40 lg:hidden" onClick={() => setMobileNav(false)}><div onClick={(e) => e.stopPropagation()}>{sidebar}</div></div>}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-white px-4 lg:px-6">
-          <button className="rounded-md p-2 lg:hidden" onClick={() => setMobileNav(true)} aria-label="Меню"><Menu className="size-5" /></button>
+          <button className="rounded-md p-2 lg:hidden" onClick={() => setMobileNav(true)} aria-label={tr('Меню')}><Menu className="size-5" /></button>
           {(me?.branches?.length ?? 0) > 1 && !isTeacherOnly && (
             <div className="hidden items-center gap-2 md:flex">
               <span className="text-[13px] text-muted">{t('header.branch', 'Филиал')}</span>
@@ -114,16 +114,16 @@ export default function Layout() {
               </button>
               {create === 'menu' && (
                 <Dropdown onClose={() => setCreate(null)}>
-                  {can('students.edit') && <MenuItem onClick={() => setCreate('student')}>Ученик</MenuItem>}
-                  {can('payments.create') && <MenuItem onClick={() => setCreate('payment')}>Платёж</MenuItem>}
-                  {can('leads.edit') && <MenuItem onClick={() => setCreate('lead')}>Лид</MenuItem>}
-                  {can('schedule.edit') && <MenuItem onClick={() => { setCreate(null); nav('/schedule?new=1') }}>Занятие</MenuItem>}
-                  {can('groups.edit') && <MenuItem onClick={() => { setCreate(null); nav('/groups?new=group') }}>Группа</MenuItem>}
+                  {can('students.edit') && <MenuItem onClick={() => setCreate('student')}>{tr('Ученик')}</MenuItem>}
+                  {can('payments.create') && <MenuItem onClick={() => setCreate('payment')}>{tr('Платёж')}</MenuItem>}
+                  {can('leads.edit') && <MenuItem onClick={() => setCreate('lead')}>{tr('Лид')}</MenuItem>}
+                  {can('schedule.edit') && <MenuItem onClick={() => { setCreate(null); nav('/schedule?new=1') }}>{tr('Занятие')}</MenuItem>}
+                  {can('groups.edit') && <MenuItem onClick={() => { setCreate(null); nav('/groups?new=group') }}>{tr('Группа')}</MenuItem>}
                 </Dropdown>
               )}
             </div>
           )}
-          <button className="flex size-9 items-center justify-center rounded-lg border border-line text-gray-600 hover:bg-gray-50" aria-label="Уведомления" onClick={() => nav('/')}>
+          <button className="flex size-9 items-center justify-center rounded-lg border border-line text-gray-600 hover:bg-gray-50" aria-label={tr('Уведомления')} onClick={() => nav('/')}>
             <Bell className="size-[18px]" />
           </button>
           <UserMenu name={me?.user.full_name ?? ''} roles={me?.roles ?? []} onLogout={logout} />
@@ -151,7 +151,7 @@ export const MenuItem = ({ children, onClick, danger }: { children: React.ReactN
   <button onClick={onClick} className={cx('flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-gray-50', danger && 'text-red-700')}>{children}</button>
 )
 
-const roleNames: Record<string, string> = { owner: 'Владелец', org_admin: 'Администратор', branch_manager: 'Управляющий', academic: 'Учебный отдел', accountant: 'Бухгалтер', hr: 'HR', sales: 'Продажи', teacher: 'Преподаватель' }
+const roleNames: Record<string, string> = { owner: tr('Владелец'), org_admin: tr('Администратор'), branch_manager: tr('Управляющий'), academic: tr('Учебный отдел'), accountant: tr('Бухгалтер'), hr: 'HR', sales: tr('Продажи'), teacher: tr('Преподаватель') }
 
 function UserMenu({ name, roles, onLogout }: { name: string; roles: string[]; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
@@ -169,7 +169,7 @@ function UserMenu({ name, roles, onLogout }: { name: string; roles: string[]; on
           <div className="flex gap-1 px-4 py-2.5">
             {(['ru', 'kk', 'en'] as Lang[]).map((l) => (
               <button key={l} onClick={() => setLang(l)} className={cx('rounded-md border px-2.5 py-1 text-xs font-semibold', lang === l ? 'border-ink bg-ink text-white' : 'border-line')}>
-                {l === 'kk' ? 'ҚАЗ' : l.toUpperCase()}
+                {l === 'kk' ? tr('ҚАЗ') : l.toUpperCase()}
               </button>
             ))}
           </div>

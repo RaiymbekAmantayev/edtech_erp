@@ -2,8 +2,10 @@ package payroll
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"emp/internal/platform/auth"
@@ -22,8 +24,52 @@ func (h *Handler) Routes(r chi.Router) {
 	r.With(mw.Perm("payroll.view")).Get("/payroll", httpx.Handler(h.report).ServeHTTP)
 	r.With(mw.Perm("payroll.view")).Get("/payroll/export", httpx.Handler(h.export).ServeHTTP)
 	r.With(mw.Perm("payroll.view")).Post("/payroll/recalc", httpx.Handler(h.recalc).ServeHTTP)
-	// кабинет преподавателя: те же расчёты, только свои занятия
+	r.With(mw.Perm("settings.manage")).Get("/settings/payroll", httpx.Handler(h.getSettings).ServeHTTP)
+	r.With(mw.Perm("settings.manage")).Put("/settings/payroll", httpx.Handler(h.saveSettings).ServeHTTP)
+	// кабинет преподавателя: те же расчёты, только свои занятия (если школа не скрыла начисления)
 	r.Get("/teacher/payroll", httpx.Handler(h.teacher).ServeHTTP)
+}
+
+func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) error {
+	var s Settings
+	if err := h.DB.Tx(r.Context(), func(tx pgx.Tx) (err error) { s, err = LoadSettings(r.Context(), tx); return }); err != nil {
+		return err
+	}
+	return httpx.OK(w, s)
+}
+
+// saveSettings сохраняет настройки школы. Уже рассчитанные начисления не меняются — для них есть «Пересчитать» в разделе «Зарплата».
+func (h *Handler) saveSettings(w http.ResponseWriter, r *http.Request) error {
+	var s Settings
+	if err := httpx.Decode(r, &s); err != nil {
+		return err
+	}
+	v := &httpx.Validation{}
+	if s.MinStudents < 0 || s.MinStudents > 100 {
+		v.Add("min_students", "OUT_OF_RANGE")
+	}
+	if !slices.Contains(BelowMinModes, s.BelowMin) {
+		v.Add("below_min", "INVALID_VALUE")
+	}
+	if s.MinAmountTiyn < 0 {
+		v.Add("min_amount_tiyn", "OUT_OF_RANGE")
+	}
+	if !slices.Contains(SubstituteModes, s.Substitute) {
+		v.Add("substitute", "INVALID_VALUE")
+	}
+	if s.SubstituteValue < 0 || (s.Substitute == "coef" && s.SubstituteValue > 1000) {
+		v.Add("substitute_value", "OUT_OF_RANGE")
+	}
+	if err := v.Err(); err != nil {
+		return err
+	}
+	b, _ := json.Marshal(s)
+	return h.DB.Tx(r.Context(), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(r.Context(), `UPDATE tenants SET settings = jsonb_set(coalesce(settings, '{}'), '{payroll}', $1::jsonb) WHERE id = app_current_tenant()`, b); err != nil {
+			return err
+		}
+		return database.Audit(r.Context(), tx, "payroll_settings", "", "update", nil, s)
+	})
 }
 
 type Filter struct {
@@ -52,6 +98,7 @@ type LessonRow struct {
 	Trial         int       `json:"trial"`
 	PayType       string    `json:"pay_type"`
 	RateTiyn      int64     `json:"rate_tiyn"`
+	PayPercent    int       `json:"pay_percent"`
 	RevenueTiyn   int64     `json:"revenue_tiyn"`
 	AmountTiyn    int64     `json:"amount_tiyn"`
 	Formula       string    `json:"formula"`
@@ -63,6 +110,7 @@ type TeacherSum struct {
 	Teacher       string `json:"teacher"`
 	PayType       string `json:"pay_type"`  // текущие условия из карточки
 	RateTiyn      int64  `json:"rate_tiyn"` // текущая ставка
+	PayPercent    int    `json:"pay_percent"`
 	Lessons       int    `json:"lessons"`
 	PaidLessons   int    `json:"paid_lessons"`
 	Minutes       int    `json:"minutes"`
@@ -109,7 +157,7 @@ func Build(ctx context.Context, tx pgx.Tx, f Filter) (Report, error) {
 		}
 	}
 	rows, err = tx.Query(ctx, `SELECT a.lesson_id::text, a.starts_at, a.minutes, g.name, c.name, b.name, a.teacher_id::text, e.full_name, sf.full_name, l.topic,
-			a.students_total, a.students_paid, a.present, a.late, a.absent, a.excused, a.trial, a.pay_type, a.rate_tiyn, a.revenue_tiyn, a.amount_tiyn, a.formula, a.calculated_at
+			a.students_total, a.students_paid, a.present, a.late, a.absent, a.excused, a.trial, a.pay_type, a.rate_tiyn, a.pay_percent, a.revenue_tiyn, a.amount_tiyn, a.formula, a.calculated_at
 		FROM teacher_accruals a JOIN lessons l ON l.id=a.lesson_id JOIN groups g ON g.id=a.group_id JOIN courses c ON c.id=g.course_id
 		JOIN branches b ON b.id=a.branch_id JOIN employees e ON e.id=a.teacher_id LEFT JOIN employees sf ON sf.id=a.substitute_for
 		WHERE `+periodA+` AND ($4 = '' OR a.teacher_id::text = $4) AND ($5::uuid[] IS NULL OR a.branch_id = ANY($5::uuid[]))
@@ -122,7 +170,7 @@ func Build(ctx context.Context, tx pgx.Tx, f Filter) (Report, error) {
 	for rows.Next() {
 		var x LessonRow
 		if err := rows.Scan(&x.LessonID, &x.StartsAt, &x.Minutes, &x.Group, &x.Course, &x.Branch, &x.TeacherID, &x.Teacher, &x.SubstituteFor, &x.Topic,
-			&x.StudentsTotal, &x.StudentsPaid, &x.Present, &x.Late, &x.Absent, &x.Excused, &x.Trial, &x.PayType, &x.RateTiyn, &x.RevenueTiyn, &x.AmountTiyn,
+			&x.StudentsTotal, &x.StudentsPaid, &x.Present, &x.Late, &x.Absent, &x.Excused, &x.Trial, &x.PayType, &x.RateTiyn, &x.PayPercent, &x.RevenueTiyn, &x.AmountTiyn,
 			&x.Formula, &x.CalculatedAt); err != nil {
 			return rep, err
 		}
@@ -142,7 +190,7 @@ func Build(ctx context.Context, tx pgx.Tx, f Filter) (Report, error) {
 	rows.Close()
 	for i := range rep.Teachers {
 		t := &rep.Teachers[i]
-		tx.QueryRow(ctx, `SELECT pay_type, pay_rate_tiyn FROM employees WHERE id=$1`, t.TeacherID).Scan(&t.PayType, &t.RateTiyn)
+		tx.QueryRow(ctx, `SELECT pay_type, pay_rate_tiyn, pay_percent FROM employees WHERE id=$1`, t.TeacherID).Scan(&t.PayType, &t.RateTiyn, &t.PayPercent)
 		if t.PayType == "fixed" {
 			t.SalaryTiyn = t.RateTiyn
 			rep.Total.SalaryTiyn += t.RateTiyn
@@ -236,6 +284,13 @@ func (h *Handler) teacher(w http.ResponseWriter, r *http.Request) error {
 	}
 	var rep Report
 	err = h.DB.Tx(r.Context(), func(tx pgx.Tx) (err error) {
+		visible, err := Visible(r.Context(), tx, p.EmployeeID)
+		if err != nil {
+			return err
+		}
+		if !visible {
+			return httpx.NewError(403, "PAYROLL_HIDDEN", "Школа не показывает начисления в кабинете преподавателя")
+		}
 		rep, err = Build(r.Context(), tx, Filter{From: from, To: to, TeacherID: p.EmployeeID})
 		return
 	})
@@ -325,7 +380,7 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request) error {
 		if name == "" {
 			name, pt = "Итого", ""
 		}
-		put(s1, row, name, pt, rateCell(t.PayType, t.RateTiyn), t.Lessons, t.PaidLessons, t.Substitutions, float64(t.Minutes)/60,
+		put(s1, row, name, pt, rateCell(t.PayType, t.RateTiyn, t.PayPercent), t.Lessons, t.PaidLessons, t.Substitutions, float64(t.Minutes)/60,
 			t.Present, t.Late, t.Absent, t.Excused, t.Trial, tenge(t.AmountTiyn), tenge(t.SalaryTiyn))
 		row++
 	}
@@ -342,7 +397,7 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request) error {
 	for i, l := range rep.Lessons {
 		st := l.StartsAt.In(loc)
 		put(s2, i+2, st.Format("02.01.2006"), st.Format("15:04"), l.Minutes, l.Teacher, str(l.SubstituteFor), l.Group, l.Course, l.Branch, str(l.Topic),
-			l.StudentsTotal, l.Present, l.Late, l.Absent, l.Excused, l.Trial, l.StudentsPaid, PayTypes[l.PayType], rateCell(l.PayType, l.RateTiyn),
+			l.StudentsTotal, l.Present, l.Late, l.Absent, l.Excused, l.Trial, l.StudentsPaid, PayTypes[l.PayType], rateCell(l.PayType, l.RateTiyn, l.PayPercent),
 			tenge(l.RevenueTiyn), tenge(l.AmountTiyn), l.Formula)
 	}
 	if n := len(rep.Lessons); n > 0 {
@@ -356,9 +411,12 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request) error {
 	return x.Write(w)
 }
 
-func rateCell(payType string, rate int64) any {
+func rateCell(payType string, rate int64, pct int) any {
 	if payType == "percent" {
 		return percent(rate) + "%"
+	}
+	if payType == "mixed" && pct > 0 {
+		return Money(rate) + " + " + percent(int64(pct)) + "%"
 	}
 	return float64(rate) / 100
 }

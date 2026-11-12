@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, errorsByField } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { label } from '../lib/i18n'
+import { label, tr } from '../lib/i18n'
 import { date, phone } from '../lib/format'
 import type { CField } from '../lib/types'
 import { Badge, Button, Card, Checkbox, Drawer, Field, Input, Select, Spinner, Table, Toast } from '../components/ui'
@@ -18,17 +18,17 @@ export default function Parents() {
   const open = params.get('open')
   return (
     <div className="mx-auto max-w-[1300px] p-4 lg:p-8">
-      <h1 className="text-[26px] font-bold">Родители <span className="text-lg font-medium text-muted tabular">{list.data?.meta.total as number}</span></h1>
-      <Input className="mt-5 !h-9 max-w-sm" placeholder="ФИО или телефон" value={q} onChange={(e) => setQ(e.target.value)} />
+      <h1 className="text-[26px] font-bold">{tr('Родители')} <span className="text-lg font-medium text-muted tabular">{list.data?.meta.total as number}</span></h1>
+      <Input className="mt-5 !h-9 max-w-sm" placeholder={tr('ФИО или телефон')} value={q} onChange={(e) => setQ(e.target.value)} />
       <Card className="mt-3" bodyClass="!p-0">
         {list.isLoading ? <Spinner /> : (
-          <Table head={['Родитель', 'Дети', 'Telegram', 'Согласие на ПД', 'Канал']}>
+          <Table head={[tr('Родитель'), tr('Дети'), 'Telegram', tr('Согласие на ПД'), tr('Канал')]}>
             {list.data?.data.map((p) => (
               <tr key={p.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setParams({ open: p.id })}>
                 <td className="px-4 py-3"><div className="font-medium">{p.full_name}</div><div className="text-xs text-muted">{phone(p.phone)}</div></td>
                 <td className="px-4 py-3 text-[13px]">{p.students.map((s) => s.full_name).join(', ') || '—'}</td>
-                <td className="px-4 py-3">{p.telegram_linked ? <Badge tone="blue">привязан</Badge> : <span className="text-[13px] text-muted">нет</span>}</td>
-                <td className="px-4 py-3 text-[13px]">{p.consent_at ? date(p.consent_at) : <span className="text-orange-700">не получено</span>}</td>
+                <td className="px-4 py-3">{p.telegram_linked ? <Badge tone="blue">{tr('привязан')}</Badge> : <span className="text-[13px] text-muted">{tr('нет')}</span>}</td>
+                <td className="px-4 py-3 text-[13px]">{p.consent_at ? date(p.consent_at) : <span className="text-orange-700">{tr('не получено')}</span>}</td>
                 <td className="px-4 py-3 text-[13px]">{p.preferred_channel}</td>
               </tr>
             ))}
@@ -52,46 +52,46 @@ function ParentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     onSuccess: () => { setEdit(null); qc.invalidateQueries({ queryKey: ['parent', id] }); qc.invalidateQueries({ queryKey: ['parents'] }) },
     onError: (e) => setErrors(errorsByField(e)),
   })
-  if (!q.data) return <Drawer open title="Родитель" onClose={onClose}><Spinner /></Drawer>
+  if (!q.data) return <Drawer open title={tr('Родитель')} onClose={onClose}><Spinner /></Drawer>
   const { parent: p, fields } = q.data
   return (
     <Drawer open title={p.full_name} onClose={onClose}>
       {!edit ? (
         <div className="space-y-5 text-sm">
           <dl className="grid grid-cols-2 gap-4">
-            <div><dt className="text-muted">Телефон</dt><dd>{phone(p.phone) || '—'}</dd></div>
+            <div><dt className="text-muted">{tr('Телефон')}</dt><dd>{phone(p.phone) || '—'}</dd></div>
             <div><dt className="text-muted">Email</dt><dd>{p.email || '—'}</dd></div>
-            <div><dt className="text-muted">ИИН (вход в кабинет)</dt><dd className="tabular">{p.iin || '—'}</dd></div>
-            <div><dt className="text-muted">Предпочтительный канал</dt><dd>{p.preferred_channel}</dd></div>
-            <div><dt className="text-muted">Язык уведомлений</dt><dd>{{ ru: 'Русский', kk: 'Қазақша', en: 'English' }[p.locale]}</dd></div>
-            <div><dt className="text-muted">Согласие на обработку ПД</dt><dd>{p.consent_at ? date(p.consent_at) : 'не получено'}</dd></div>
-            <div><dt className="text-muted">Telegram</dt><dd>{p.telegram_linked ? 'привязан' : <button className="text-brand-600" onClick={() => { navigator.clipboard?.writeText(p.telegram_link ?? ''); setToast('Ссылка скопирована') }}>скопировать ссылку на бота</button>}</dd></div>
+            <div><dt className="text-muted">{tr('ИИН (вход в кабинет)')}</dt><dd className="tabular">{p.iin || '—'}</dd></div>
+            <div><dt className="text-muted">{tr('Предпочтительный канал')}</dt><dd>{p.preferred_channel}</dd></div>
+            <div><dt className="text-muted">{tr('Язык уведомлений')}</dt><dd>{{ ru: tr('Русский'), kk: tr('Қазақша'), en: 'English' }[p.locale]}</dd></div>
+            <div><dt className="text-muted">{tr('Согласие на обработку ПД')}</dt><dd>{p.consent_at ? date(p.consent_at) : tr('не получено')}</dd></div>
+            <div><dt className="text-muted">Telegram</dt><dd>{p.telegram_linked ? tr('привязан') : <button className="text-brand-600" onClick={() => { navigator.clipboard?.writeText(p.telegram_link ?? ''); setToast(tr('Ссылка скопирована')) }}>{tr('скопировать ссылку на бота')}</button>}</dd></div>
             {fields.map((f) => <div key={f.key}><dt className="text-muted">{label(f.label)}</dt><dd>{cfDisplay(f, p.custom_fields[f.key])}</dd></div>)}
           </dl>
           <div>
-            <div className="mb-2 font-semibold">Дети</div>
-            {p.students.map((s) => <Link key={s.id} to={`/students/${s.id}`} className="block py-1 text-brand-600 hover:underline">{s.full_name}{s.is_payer && ' · плательщик'}</Link>)}
+            <div className="mb-2 font-semibold">{tr('Дети')}</div>
+            {p.students.map((s) => <Link key={s.id} to={`/students/${s.id}`} className="block py-1 text-brand-600 hover:underline">{s.full_name}{s.is_payer && tr(' · плательщик')}</Link>)}
           </div>
-          {can('parents.edit') && <Button onClick={() => setEdit({ full_name: p.full_name, phone: p.phone ?? '', email: p.email ?? '', ...(can('students.view_iin') ? { iin: p.iin ?? '' } : {}), preferred_channel: p.preferred_channel, locale: p.locale, custom_fields: { ...p.custom_fields } })}>Редактировать</Button>}
+          {can('parents.edit') && <Button onClick={() => setEdit({ full_name: p.full_name, phone: p.phone ?? '', email: p.email ?? '', ...(can('students.view_iin') ? { iin: p.iin ?? '' } : {}), preferred_channel: p.preferred_channel, locale: p.locale, custom_fields: { ...p.custom_fields } })}>{tr('Редактировать')}</Button>}
         </div>
       ) : (
         <div className="space-y-4">
-          <Field label="ФИО" error={errors.full_name}><Input value={edit.full_name as string} onChange={(e) => setEdit({ ...edit, full_name: e.target.value })} /></Field>
-          <Field label="Телефон" error={errors.phone}><Input value={edit.phone as string} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
+          <Field label={tr('ФИО')} error={errors.full_name}><Input value={edit.full_name as string} onChange={(e) => setEdit({ ...edit, full_name: e.target.value })} /></Field>
+          <Field label={tr('Телефон')} error={errors.phone}><Input value={edit.phone as string} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
           <Field label="Email" error={errors.email}><Input value={edit.email as string} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></Field>
           {'iin' in edit && (
-            <Field label="ИИН" error={errors.iin} hint="Логин родителя в личный кабинет; пароль при первом входе — 12345">
+            <Field label={tr('ИИН')} error={errors.iin} hint={tr('Логин родителя в личный кабинет; пароль при первом входе — 12345')}>
               <Input inputMode="numeric" maxLength={12} value={edit.iin as string} onChange={(e) => setEdit({ ...edit, iin: e.target.value.replace(/\D/g, '') })} />
             </Field>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Канал"><Select value={edit.preferred_channel as string} onChange={(e) => setEdit({ ...edit, preferred_channel: e.target.value })}><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></Select></Field>
-            <Field label="Язык"><Select value={edit.locale as string} onChange={(e) => setEdit({ ...edit, locale: e.target.value })}><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option></Select></Field>
+            <Field label={tr('Канал')}><Select value={edit.preferred_channel as string} onChange={(e) => setEdit({ ...edit, preferred_channel: e.target.value })}><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></Select></Field>
+            <Field label={tr('Язык')}><Select value={edit.locale as string} onChange={(e) => setEdit({ ...edit, locale: e.target.value })}><option value="ru">{tr('Русский')}</option><option value="kk">{tr('Қазақша')}</option><option value="en">English</option></Select></Field>
           </div>
           {fields.map((f) => <CFInput key={f.key} field={f} value={(edit.custom_fields as Record<string, unknown>)[f.key]} error={errors['custom_fields.' + f.key]}
             onChange={(v) => setEdit({ ...edit, custom_fields: { ...(edit.custom_fields as object), [f.key]: v } })} />)}
-          {!p.consent_at && <Checkbox checked={!!edit.consent} onChange={(v) => setEdit({ ...edit, consent: v })} label="Получено согласие на обработку персональных данных" />}
-          <div className="flex gap-2"><Button onClick={() => setEdit(null)}>Отмена</Button><Button variant="primary" loading={m.isPending} onClick={() => m.mutate()}>Сохранить</Button></div>
+          {!p.consent_at && <Checkbox checked={!!edit.consent} onChange={(v) => setEdit({ ...edit, consent: v })} label={tr('Получено согласие на обработку персональных данных')} />}
+          <div className="flex gap-2"><Button onClick={() => setEdit(null)}>{tr('Отмена')}</Button><Button variant="primary" loading={m.isPending} onClick={() => m.mutate()}>{tr('Сохранить')}</Button></div>
         </div>
       )}
       {toast && <Toast text={toast} onDone={() => setToast('')} />}

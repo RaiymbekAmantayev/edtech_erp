@@ -1,6 +1,7 @@
 // Клиент кабинета ученика/родителя: свой токен (issuer emp-portal), хранится в sessionStorage вкладки Mini App.
 import { ApiError } from '../lib/api'
 import type { TestResult } from '../lib/tests'
+import { tr } from '../lib/i18n'
 
 const KEY = 'emp.portal'
 let token: string | null = (() => { try { return sessionStorage.getItem(KEY) } catch { return null } })()
@@ -21,7 +22,7 @@ export async function portal<T = any>(method: string, path: string, body?: unkno
   const json = text ? JSON.parse(text) : {}
   if (!r.ok) {
     const e = json.error ?? {}
-    throw new ApiError(r.status, e.code ?? 'ERROR', e.message ?? 'Ошибка запроса', e.fields ?? [])
+    throw new ApiError(r.status, e.code ?? 'ERROR', e.message ?? tr('Ошибка запроса'), e.fields ?? [])
   }
   return json.data as T
 }
@@ -74,4 +75,5 @@ export type TeacherCabinet = {
   schedule: Lesson[]
   to_mark: Lesson[]
   conducted: { id: string; starts_at: string; group: string; topic: string | null; marked: number; present: number }[]
+  payroll_visible: boolean
 }

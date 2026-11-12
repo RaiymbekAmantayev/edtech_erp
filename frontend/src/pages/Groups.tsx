@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import { money, parseMoney, weekdaysText } from '../lib/format'
 import type { Classroom, Course, Employee, Group } from '../lib/types'
 import { Button, Card, Field, Input, Modal, Select, Spinner, Table, Tabs, Textarea, cx } from '../components/ui'
+import { tr } from '../lib/i18n'
 
 export default function Groups() {
   const { can, branchId } = useAuth()
@@ -21,53 +22,53 @@ export default function Groups() {
   return (
     <div className="mx-auto max-w-[1400px] p-4 lg:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[26px] font-bold">Группы и курсы</h1>
+        <h1 className="text-[26px] font-bold">{tr('Группы и курсы')}</h1>
         {can('groups.edit') && (
           <div className="flex gap-2">
-            <Button onClick={() => setModal('course')}>+ Курс</Button>
-            <Button onClick={() => setModal('individual')}>+ Индивидуально</Button>
-            <Button variant="primary" onClick={() => setModal('group')}><Plus className="size-4" />Группа</Button>
+            <Button onClick={() => setModal('course')}>{tr('+ Курс')}</Button>
+            <Button onClick={() => setModal('individual')}>{tr('+ Индивидуально')}</Button>
+            <Button variant="primary" onClick={() => setModal('group')}><Plus className="size-4" />{tr('Группа')}</Button>
           </div>
         )}
       </div>
-      <Tabs className="mt-5" value={tab} onChange={(v) => setParams({ tab: v })} items={[{ value: 'groups', label: 'Группы' }, { value: 'individual', label: 'Индивидуальные' }, { value: 'courses', label: 'Курсы', count: courses.data?.length }]} />
+      <Tabs className="mt-5" value={tab} onChange={(v) => setParams({ tab: v })} items={[{ value: 'groups', label: tr('Группы') }, { value: 'individual', label: tr('Индивидуальные') }, { value: 'courses', label: tr('Курсы'), count: courses.data?.length }]} />
 
       {tab !== 'courses' && (
         <>
-          <Input className="mt-4 !h-9 max-w-xs" placeholder="Поиск группы или курса" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="mt-4 !h-9 max-w-xs" placeholder={tr('Поиск группы или курса')} value={q} onChange={(e) => setQ(e.target.value)} />
           <Card className="mt-3" bodyClass="!p-0">
             {groups.isLoading ? <Spinner /> : (
-              <Table head={['Группа', 'Курс', 'Преподаватель', 'Расписание', 'Кабинет', 'Состав', 'Филиал']}>
+              <Table head={[tr('Группа'), tr('Курс'), tr('Преподаватель'), tr('Расписание'), tr('Кабинет'), tr('Состав'), tr('Филиал')]}>
                 {groups.data?.map((g) => (
                   <tr key={g.id} className="cursor-pointer hover:bg-gray-50" onClick={() => nav('/groups/' + g.id)}>
                     <td className="px-4 py-3 font-medium">{g.name}</td>
                     <td className="px-4 py-3 text-[13px]">{g.course_name}</td>
                     <td className="px-4 py-3 text-[13px]">{g.teacher_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-[13px]">{g.schedule.map((s) => `${weekdaysText(s.weekdays)} ${s.start_time}`).join('; ') || <span className="text-muted">не задано</span>}</td>
+                    <td className="px-4 py-3 text-[13px]">{g.schedule.map((s) => `${weekdaysText(s.weekdays)} ${s.start_time}`).join('; ') || <span className="text-muted">{tr('не задано')}</span>}</td>
                     <td className="px-4 py-3 text-[13px]">{g.classroom_name ?? '—'}</td>
-                    <td className="px-4 py-3"><Fill n={g.students} cap={g.capacity} />{g.waitlist > 0 && <span className="ml-2 text-xs text-muted">+{g.waitlist} в ожидании</span>}</td>
+                    <td className="px-4 py-3"><Fill n={g.students} cap={g.capacity} />{g.waitlist > 0 && <span className="ml-2 text-xs text-muted">+{g.waitlist} {tr('в ожидании')}</span>}</td>
                     <td className="px-4 py-3 text-[13px] text-muted">{g.branch_name}</td>
                   </tr>
                 ))}
               </Table>
             )}
-            {groups.data?.length === 0 && <div className="py-12 text-center text-sm text-muted">Групп пока нет</div>}
+            {groups.data?.length === 0 && <div className="py-12 text-center text-sm text-muted">{tr('Групп пока нет')}</div>}
           </Card>
         </>
       )}
       {tab === 'courses' && (
         <Card className="mt-4" bodyClass="!p-0">
-          <Table head={['Курс', 'Категория', 'Занятий', 'Длительность', 'Стоимость', 'Групп', 'Учеников', 'Статус']}>
+          <Table head={[tr('Курс'), tr('Категория'), tr('Занятий'), tr('Длительность'), tr('Стоимость'), tr('Групп'), tr('Учеников'), tr('Статус')]}>
             {courses.data?.map((c) => (
               <tr key={c.id} className={cx('hover:bg-gray-50', can('groups.edit') && 'cursor-pointer')} onClick={() => can('groups.edit') && setModal(c)}>
                 <td className="px-4 py-3 font-medium">{c.name}</td>
                 <td className="px-4 py-3 text-[13px]">{c.category ?? '—'}</td>
                 <td className="px-4 py-3 tabular">{c.lessons_count}</td>
-                <td className="px-4 py-3 tabular">{c.duration_minutes} мин</td>
+                <td className="px-4 py-3 tabular">{c.duration_minutes} {tr('мин')}</td>
                 <td className="px-4 py-3 font-semibold tabular">{money(c.price_tiyn)}</td>
                 <td className="px-4 py-3 tabular">{c.groups}</td>
                 <td className="px-4 py-3 tabular">{c.students}</td>
-                <td className="px-4 py-3 text-[13px]">{c.status === 'active' ? 'Активен' : 'В архиве'}</td>
+                <td className="px-4 py-3 text-[13px]">{c.status === 'active' ? tr('Активен') : tr('В архиве')}</td>
               </tr>
             ))}
           </Table>
@@ -105,19 +106,19 @@ export function GroupModal({ group, individual, onClose, onSaved }: { group?: Gr
     onError: (e) => setErrors(errorsByField(e)),
   })
   return (
-    <Modal open title={group ? 'Редактирование группы' : individual ? 'Индивидуальные занятия' : 'Новая группа'} onClose={onClose}
-      footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={m.isPending} onClick={() => m.mutate()}>Сохранить</Button></>}>
+    <Modal open title={group ? tr('Редактирование группы') : individual ? tr('Индивидуальные занятия') : tr('Новая группа')} onClose={onClose}
+      footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" loading={m.isPending} onClick={() => m.mutate()}>{tr('Сохранить')}</Button></>}>
       <div className="grid gap-4 sm:grid-cols-2">
         {individual ? (
-          <Field label="Ученик" className="sm:col-span-2" error={errors.student_id}><Select value={f.student_id} onChange={(e) => setF({ ...f, student_id: e.target.value })}><option value="">Выберите ученика</option>{students.data?.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}</Select></Field>
-        ) : <Field label="Название" className="sm:col-span-2" error={errors.name}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="ЕНТ Математика 11А" /></Field>}
-        {!group && <Field label="Филиал" error={errors.branch_id}><Select value={f.branch_id} onChange={(e) => setF({ ...f, branch_id: e.target.value })}>{me?.branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></Field>}
-        {!group && <Field label="Курс" error={errors.course_id}><Select value={f.course_id} onChange={(e) => setF({ ...f, course_id: e.target.value })}><option value="">Выберите</option>{courses.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>}
-        <Field label="Преподаватель"><Select value={f.teacher_id} onChange={(e) => setF({ ...f, teacher_id: e.target.value })}><option value="">—</option>{teachers.data?.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</Select></Field>
-        <Field label="Кабинет"><Select value={f.classroom_id} onChange={(e) => setF({ ...f, classroom_id: e.target.value })}><option value="">—</option>{rooms.data?.filter((r) => r.branch_id === f.branch_id).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field>
-        {!individual && <Field label="Лимит учеников"><Input type="number" value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value })} /></Field>}
-        <Field label="Дата начала"><Input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} /></Field>
-        <Field label="Дата окончания"><Input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} /></Field>
+          <Field label={tr('Ученик')} className="sm:col-span-2" error={errors.student_id}><Select value={f.student_id} onChange={(e) => setF({ ...f, student_id: e.target.value })}><option value="">{tr('Выберите ученика')}</option>{students.data?.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}</Select></Field>
+        ) : <Field label={tr('Название')} className="sm:col-span-2" error={errors.name}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={tr('ЕНТ Математика 11А')} /></Field>}
+        {!group && <Field label={tr('Филиал')} error={errors.branch_id}><Select value={f.branch_id} onChange={(e) => setF({ ...f, branch_id: e.target.value })}>{me?.branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></Field>}
+        {!group && <Field label={tr('Курс')} error={errors.course_id}><Select value={f.course_id} onChange={(e) => setF({ ...f, course_id: e.target.value })}><option value="">{tr('Выберите')}</option>{courses.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>}
+        <Field label={tr('Преподаватель')}><Select value={f.teacher_id} onChange={(e) => setF({ ...f, teacher_id: e.target.value })}><option value="">—</option>{teachers.data?.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</Select></Field>
+        <Field label={tr('Кабинет')}><Select value={f.classroom_id} onChange={(e) => setF({ ...f, classroom_id: e.target.value })}><option value="">—</option>{rooms.data?.filter((r) => r.branch_id === f.branch_id).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field>
+        {!individual && <Field label={tr('Лимит учеников')}><Input type="number" value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value })} /></Field>}
+        <Field label={tr('Дата начала')}><Input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} /></Field>
+        <Field label={tr('Дата окончания')}><Input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} /></Field>
       </div>
     </Modal>
   )
@@ -136,15 +137,15 @@ function CourseModal({ course, onClose }: { course?: Course; onClose: () => void
     onError: (e) => setErrors(errorsByField(e)),
   })
   return (
-    <Modal open title={course ? course.name : 'Новый курс'} onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={m.isPending} onClick={() => m.mutate()}>Сохранить</Button></>}>
+    <Modal open title={course ? course.name : tr('Новый курс')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" loading={m.isPending} onClick={() => m.mutate()}>{tr('Сохранить')}</Button></>}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Название" className="sm:col-span-2" error={errors.name}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-        <Field label="Категория"><Input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} placeholder="ЕНТ, Английский, IT" /></Field>
-        <Field label="Стоимость курса/абонемента, ₸" error={errors.price_tiyn}><Input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
-        <Field label="Количество занятий"><Input type="number" value={f.lessons_count} onChange={(e) => setF({ ...f, lessons_count: e.target.value })} /></Field>
-        <Field label="Длительность, мин"><Input type="number" value={f.duration_minutes} onChange={(e) => setF({ ...f, duration_minutes: e.target.value })} /></Field>
-        <Field label="Описание / программа" className="sm:col-span-2"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
-        {course && <Field label="Статус"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="active">Активен</option><option value="archived">В архиве</option></Select></Field>}
+        <Field label={tr('Название')} className="sm:col-span-2" error={errors.name}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+        <Field label={tr('Категория')}><Input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} placeholder={tr('ЕНТ, Английский, IT')} /></Field>
+        <Field label={tr('Стоимость курса/абонемента, ₸')} error={errors.price_tiyn}><Input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+        <Field label={tr('Количество занятий')}><Input type="number" value={f.lessons_count} onChange={(e) => setF({ ...f, lessons_count: e.target.value })} /></Field>
+        <Field label={tr('Длительность, мин')}><Input type="number" value={f.duration_minutes} onChange={(e) => setF({ ...f, duration_minutes: e.target.value })} /></Field>
+        <Field label={tr('Описание / программа')} className="sm:col-span-2"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
+        {course && <Field label={tr('Статус')}><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="active">{tr('Активен')}</option><option value="archived">{tr('В архиве')}</option></Select></Field>}
       </div>
     </Modal>
   )

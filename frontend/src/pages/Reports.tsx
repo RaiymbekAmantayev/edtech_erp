@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Card, Spinner, Stat, studentStatus } from '../components/ui'
 import { Bar } from './finance/Finance'
+import { tr } from '../lib/i18n'
 
 export default function Reports() {
   const { can } = useAuth()
@@ -16,13 +17,13 @@ export default function Reports() {
   const allTotal = att.data?.reduce((a, r) => a + r.present + r.absent + r.excused, 0) ?? 0
   return (
     <div className="mx-auto max-w-[1300px] space-y-6 p-4 lg:p-8">
-      <h1 className="text-[26px] font-bold">Отчёты</h1>
+      <h1 className="text-[26px] font-bold">{tr('Отчёты')}</h1>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Object.entries(d.by_status as Record<string, number>).map(([k, v]) => <Stat key={k} label={studentStatus[k]?.[0] ?? k} value={v} />)}
-        {allTotal > 0 && <Stat label="Посещаемость за 30 дней" value={`${Math.round((rateTotal / allTotal) * 100)}%`} />}
+        {allTotal > 0 && <Stat label={tr('Посещаемость за 30 дней')} value={`${Math.round((rateTotal / allTotal) * 100)}%`} />}
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Движение учеников по месяцам">
+        <Card title={tr('Движение учеников по месяцам')}>
           <div className="flex h-48 items-end gap-4">
             {d.months.map((m: any) => (
               <div key={m.month} className="flex flex-1 flex-col items-center gap-1">
@@ -35,21 +36,21 @@ export default function Reports() {
               </div>
             ))}
           </div>
-          <div className="mt-3 flex gap-4 text-xs text-muted"><span>■ <span className="text-brand-600">пришли</span></span><span>■ <span className="text-orange-500">выбыли</span></span><span>■ лиды</span></div>
+          <div className="mt-3 flex gap-4 text-xs text-muted"><span>■ <span className="text-brand-600">{tr('пришли')}</span></span><span>■ <span className="text-orange-500">{tr('выбыли')}</span></span><span>{tr('■ лиды')}</span></div>
         </Card>
-        <Card title="Лиды по источникам · конверсия">
-          {d.sources.map((s: any) => <Bar key={s.source} label={`${s.source} · ${s.won} из ${s.leads} (${Math.round((s.won / s.leads) * 100)}%)`} value={s.leads} max={d.sources[0]?.leads ?? 1} fmt={(v) => String(v)} />)}
+        <Card title={tr('Лиды по источникам · конверсия')}>
+          {d.sources.map((s: any) => <Bar key={s.source} label={tr('{0} · {1} из {2} ({3}%)', s.source, s.won, s.leads, Math.round((s.won / s.leads) * 100))} value={s.leads} max={d.sources[0]?.leads ?? 1} fmt={(v) => String(v)} />)}
         </Card>
-        <Card title="Причины выбытия (отток)">
-          {d.leave_reasons.length === 0 ? <div className="text-sm text-muted">Выбывших пока нет</div> : d.leave_reasons.map((r: any) => <Bar key={r.reason} label={r.reason} value={r.count} max={d.leave_reasons[0].count} fmt={(v) => String(v)} />)}
+        <Card title={tr('Причины выбытия (отток)')}>
+          {d.leave_reasons.length === 0 ? <div className="text-sm text-muted">{tr('Выбывших пока нет')}</div> : d.leave_reasons.map((r: any) => <Bar key={r.reason} label={r.reason} value={r.count} max={d.leave_reasons[0].count} fmt={(v) => String(v)} />)}
         </Card>
         {can('attendance.view') && (
-          <Card title="Посещаемость по группам · 30 дней">
+          <Card title={tr('Посещаемость по группам · 30 дней')}>
             {att.data?.filter((r) => r.rate != null).sort((a, b) => a.rate - b.rate).map((r) => <Bar key={r.group_id} label={r.group} value={Math.round(r.rate)} max={100} fmt={(v) => v + '%'} />)}
           </Card>
         )}
       </div>
-      <div className="text-sm text-muted">Должники и поступления — в разделе <Link to="/finance" className="text-brand-600">Финансы</Link>. Экспорт учеников в Excel — в разделе <Link to="/students" className="text-brand-600">Ученики</Link>.</div>
+      <div className="text-sm text-muted">{tr('Должники и поступления — в разделе')} <Link to="/finance" className="text-brand-600">{tr('Финансы')}</Link>{tr('. Экспорт учеников в Excel — в разделе')} <Link to="/students" className="text-brand-600">{tr('Ученики')}</Link>.</div>
     </div>
   )
 }

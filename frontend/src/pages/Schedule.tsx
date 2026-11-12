@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import { addDays, dayMonth, dayStart, isoDay, time, weekdayShort } from '../lib/format'
 import type { Classroom, Employee, Group, Lesson } from '../lib/types'
 import { Badge, Banner, Button, Drawer, Field, Input, Modal, Segmented, Select, Spinner, StatusBadge, cx, lessonState } from '../components/ui'
+import { tr } from '../lib/i18n'
 
 const START_H = 8, END_H = 21, PX = 64 // пикселей на час
 
@@ -46,7 +47,7 @@ export default function Schedule() {
   const refresh = () => { qc.invalidateQueries({ queryKey: ['lessons'] }); qc.invalidateQueries({ queryKey: ['lessons-decisions'] }) }
 
   const columns = mode === 'rooms'
-    ? (rooms.data ?? []).map((r) => ({ id: r.id, title: r.name, sub: r.is_online ? 'без лимита' : `${r.capacity ?? '—'} мест`, match: (l: Lesson) => l.classroom_id === r.id }))
+    ? (rooms.data ?? []).map((r) => ({ id: r.id, title: r.name, sub: r.is_online ? tr('без лимита') : tr('{0} мест', r.capacity ?? '—'), match: (l: Lesson) => l.classroom_id === r.id }))
     : (teachers.data ?? []).filter((t) => !branch || !t.branch_ids.length || t.branch_ids.includes(branch)).map((t) => ({ id: t.id, title: t.full_name, sub: t.subjects.slice(0, 2).join(', '), match: (l: Lesson) => l.teacher_id === t.id }))
   const isToday = day === isoDay()
   const [now, setNow] = useState(new Date())
@@ -58,34 +59,34 @@ export default function Schedule() {
   return (
     <div className="p-4 lg:p-8">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-2 text-[26px] font-bold">Расписание</h1>
+        <h1 className="mr-2 text-[26px] font-bold">{tr('Расписание')}</h1>
         <div className="flex items-center gap-1">
-          <Button size="sm" className="!px-2" onClick={() => setDay(addDays(day, mode === 'week' ? -7 : -1))} aria-label="Назад"><ChevronLeft className="size-4" /></Button>
+          <Button size="sm" className="!px-2" onClick={() => setDay(addDays(day, mode === 'week' ? -7 : -1))} aria-label={tr('Назад')}><ChevronLeft className="size-4" /></Button>
           <label className="relative">
             <Button size="sm" className="min-w-36 first-letter:uppercase">{mode === 'week' ? `${dayMonth(new Date(weekStart + 'T12:00:00+05:00'))} – ${dayMonth(new Date(addDays(weekStart, 6) + 'T12:00:00+05:00'))}` : dayMonth(new Date(day + 'T12:00:00+05:00'))}</Button>
             <input type="date" value={day} onChange={(e) => e.target.value && setDay(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
           </label>
-          <Button size="sm" className="!px-2" onClick={() => setDay(addDays(day, mode === 'week' ? 7 : 1))} aria-label="Вперёд"><ChevronRight className="size-4" /></Button>
+          <Button size="sm" className="!px-2" onClick={() => setDay(addDays(day, mode === 'week' ? 7 : 1))} aria-label={tr('Вперёд')}><ChevronRight className="size-4" /></Button>
         </div>
-        <button onClick={() => setDay(isoDay())} className="text-sm font-medium text-brand-600 hover:underline">Сегодня</button>
-        {!isTeacherOnly && <Segmented value={mode} onChange={setMode} items={[{ value: 'rooms', label: 'Кабинеты' }, { value: 'teachers', label: 'Преподаватели' }, { value: 'week', label: 'Неделя' }]} />}
+        <button onClick={() => setDay(isoDay())} className="text-sm font-medium text-brand-600 hover:underline">{tr('Сегодня')}</button>
+        {!isTeacherOnly && <Segmented value={mode} onChange={setMode} items={[{ value: 'rooms', label: tr('Кабинеты') }, { value: 'teachers', label: tr('Преподаватели') }, { value: 'week', label: tr('Неделя') }]} />}
         <div className="flex-1" />
         {!isTeacherOnly && (me?.branches?.length ?? 0) > 1 && (
           <Select className="!h-9 w-48" value={branch} onChange={(e) => setBranch(e.target.value)}>{me?.branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>
         )}
-        {can('schedule.edit') && <Button variant="primary" size="sm" onClick={() => setCreate(true)}><Plus className="size-4" />Занятие</Button>}
+        {can('schedule.edit') && <Button variant="primary" size="sm" onClick={() => setCreate(true)}><Plus className="size-4" />{tr('Занятие')}</Button>}
       </div>
 
       {(firstConflict || (decisions.data?.length ?? 0) > 0) && (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {firstConflict && (
-            <Banner tone="red" icon={<AlertTriangle className="size-4" />} action={<button className="font-semibold" onClick={() => setOpen(firstConflict)}>Решить</button>}>
-              <b>Конфликт в {time(firstConflict.starts_at)}:</b> {firstConflict.teacher_name} поставлен в «{firstConflict.group_name}»{conflictPair && <> и «{conflictPair.group_name}» ({conflictPair.classroom_name})</>} одновременно.
+            <Banner tone="red" icon={<AlertTriangle className="size-4" />} action={<button className="font-semibold" onClick={() => setOpen(firstConflict)}>{tr('Решить')}</button>}>
+              <b>{tr('Конфликт в')} {time(firstConflict.starts_at)}:</b> {firstConflict.teacher_name} {tr('поставлен в «')}{firstConflict.group_name}»{conflictPair && <> {tr('и «')}{conflictPair.group_name}» ({conflictPair.classroom_name})</>} {tr('одновременно.')}
             </Banner>
           )}
           {(decisions.data?.length ?? 0) > 0 && (
-            <Banner tone="blue" icon={<CalendarDays className="size-4" />} action={<button className="font-semibold" onClick={() => { setDay(isoDay(new Date(decisions.data![0].starts_at))); setMode('rooms') }}>Открыть</button>}>
-              Нерабочие дни: {decisions.data!.length} занятий серий ждут решения о переносе (ближайшее — {dayMonth(new Date(decisions.data![0].starts_at))}).
+            <Banner tone="blue" icon={<CalendarDays className="size-4" />} action={<button className="font-semibold" onClick={() => { setDay(isoDay(new Date(decisions.data![0].starts_at))); setMode('rooms') }}>{tr('Открыть')}</button>}>
+              {tr('Нерабочие дни:')} {decisions.data!.length} {tr('занятий серий ждут решения о переносе (ближайшее —')} {dayMonth(new Date(decisions.data![0].starts_at))}).
             </Banner>
           )}
         </div>
@@ -126,9 +127,9 @@ export default function Schedule() {
                       return (
                         <button key={l.id} onClick={() => setOpen(l)} className={cx('absolute inset-x-1.5 overflow-hidden rounded-lg border px-2 py-1.5 text-left text-xs', tone(l))} style={{ top: top + 2, height: h }}>
                           <div className="truncate font-semibold">{l.group_name}</div>
-                          <div className="truncate opacity-80 tabular">{time(l.starts_at)}–{time(l.ends_at)} · {l.students}{l.capacity ? `/${l.capacity}` : ''}{l.trials > 0 && ` · ${l.trials} пробный`}</div>
+                          <div className="truncate opacity-80 tabular">{time(l.starts_at)}–{time(l.ends_at)} · {l.students}{l.capacity ? `/${l.capacity}` : ''}{l.trials > 0 && tr(' · {0} пробный', l.trials)}</div>
                           {h > 50 && <div className="truncate opacity-80">{mode === 'rooms' ? l.teacher_name : l.classroom_name}</div>}
-                          {h > 66 && (l.conflict || l.state !== 'planned') && <div className="truncate font-semibold">{l.conflict ? 'Конфликт' : lessonState[l.state]?.[0]}</div>}
+                          {h > 66 && (l.conflict || l.state !== 'planned') && <div className="truncate font-semibold">{l.conflict ? tr('Конфликт') : lessonState[l.state]?.[0]}</div>}
                         </button>
                       )
                     })}
@@ -136,13 +137,13 @@ export default function Schedule() {
                   </div>
                 </div>
               ))}
-              {columns.length === 0 && <div className="p-10 text-sm text-muted">Добавьте кабинеты в «Настройки → Филиалы и кабинеты»</div>}
+              {columns.length === 0 && <div className="p-10 text-sm text-muted">{tr('Добавьте кабинеты в «Настройки → Филиалы и кабинеты»')}</div>}
             </div>
           </div>
         )}
       </div>
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted">
-        {[['border-indigo-200 bg-indigo-50', 'Групповое'], ['border-emerald-300 bg-emerald-50', 'Индивидуальное'], ['border-purple-300 bg-purple-50', 'С пробным учеником'], ['border-red-300 bg-red-50', 'Конфликт'], ['border-gray-300 bg-gray-100', 'Проведено'], ['border-amber-300 bg-amber-50', 'Нерабочий день']].map(([c, l]) => (
+        {[['border-indigo-200 bg-indigo-50', tr('Групповое')], ['border-emerald-300 bg-emerald-50', tr('Индивидуальное')], ['border-purple-300 bg-purple-50', tr('С пробным учеником')], ['border-red-300 bg-red-50', tr('Конфликт')], ['border-gray-300 bg-gray-100', tr('Проведено')], ['border-amber-300 bg-amber-50', tr('Нерабочий день')]].map(([c, l]) => (
           <span key={l} className="flex items-center gap-1.5"><span className={cx('size-3 rounded border', c)} />{l}</span>
         ))}
       </div>
@@ -163,27 +164,27 @@ function LessonDrawer({ lesson: l, onClose, onChanged }: { lesson: Lesson; onClo
   return (
     <Drawer open title={l.group_name} onClose={onClose}>
       <div className="space-y-4 text-sm">
-        <div className="flex flex-wrap gap-2"><StatusBadge map={lessonState} value={l.state} />{l.conflict && <Badge tone="red">Конфликт</Badge>}{l.group_type === 'individual' && <Badge tone="green">Индивидуальное</Badge>}{l.schedule_id && <Badge>Серия</Badge>}</div>
+        <div className="flex flex-wrap gap-2"><StatusBadge map={lessonState} value={l.state} />{l.conflict && <Badge tone="red">{tr('Конфликт')}</Badge>}{l.group_type === 'individual' && <Badge tone="green">{tr('Индивидуальное')}</Badge>}{l.schedule_id && <Badge>{tr('Серия')}</Badge>}</div>
         <dl className="grid grid-cols-2 gap-3">
-          <div><dt className="text-muted">Время</dt><dd className="font-medium tabular">{dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}–{time(l.ends_at)}</dd></div>
-          <div><dt className="text-muted">Курс</dt><dd className="font-medium">{l.course_name}</dd></div>
-          <div><dt className="text-muted">Преподаватель</dt><dd className="font-medium">{l.teacher_name ?? '—'}{l.substitute_for && <div className="mt-0.5"><Badge tone="purple">замена за {l.substitute_for}</Badge></div>}</dd></div>
-          <div><dt className="text-muted">Кабинет</dt><dd className="font-medium">{l.classroom_name ?? '—'}</dd></div>
-          <div><dt className="text-muted">Учеников</dt><dd className="font-medium">{l.students}{l.capacity ? ` из ${l.capacity}` : ''}{l.trials ? ` + ${l.trials} пробных` : ''}</dd></div>
-          <div><dt className="text-muted">Отмечено</dt><dd className="font-medium">{l.marked}</dd></div>
-          {l.topic && <div className="col-span-2"><dt className="text-muted">Тема</dt><dd>{l.topic}</dd></div>}
+          <div><dt className="text-muted">{tr('Время')}</dt><dd className="font-medium tabular">{dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}–{time(l.ends_at)}</dd></div>
+          <div><dt className="text-muted">{tr('Курс')}</dt><dd className="font-medium">{l.course_name}</dd></div>
+          <div><dt className="text-muted">{tr('Преподаватель')}</dt><dd className="font-medium">{l.teacher_name ?? '—'}{l.substitute_for && <div className="mt-0.5"><Badge tone="purple">{tr('замена за')} {l.substitute_for}</Badge></div>}</dd></div>
+          <div><dt className="text-muted">{tr('Кабинет')}</dt><dd className="font-medium">{l.classroom_name ?? '—'}</dd></div>
+          <div><dt className="text-muted">{tr('Учеников')}</dt><dd className="font-medium">{l.students}{l.capacity ? tr(' из {0}', l.capacity) : ''}{l.trials ? tr(' + {0} пробных', l.trials) : ''}</dd></div>
+          <div><dt className="text-muted">{tr('Отмечено')}</dt><dd className="font-medium">{l.marked}</dd></div>
+          {l.topic && <div className="col-span-2"><dt className="text-muted">{tr('Тема')}</dt><dd>{l.topic}</dd></div>}
         </dl>
-        {l.status === 'needs_decision' && <Banner tone="yellow">Занятие попало на нерабочий день. Перенесите его или оставьте в расписании.</Banner>}
+        {l.status === 'needs_decision' && <Banner tone="yellow">{tr('Занятие попало на нерабочий день. Перенесите его или оставьте в расписании.')}</Banner>}
         <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-          {l.status !== 'cancelled' && new Date(l.starts_at).getTime() < Date.now() + 30 * 60e3 && <Link to={`/attendance/${l.id}`}><Button variant="primary">{l.status === 'done' ? 'Посещаемость' : 'Отметить посещаемость'}</Button></Link>}
-          {can('schedule.edit') && l.status !== 'cancelled' && <Button onClick={() => setSub(true)}>Заменить преподавателя</Button>}
-          {can('schedule.edit') && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setMove(true)}>Перенести</Button>}
-          {can('schedule.edit') && l.status === 'needs_decision' && <Button loading={keep.isPending} onClick={() => keep.mutate()}>Провести в этот день</Button>}
-          {(can('schedule.edit') || can('leads.edit')) && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setTrial(true)}>+ Пробный ученик</Button>}
+          {l.status !== 'cancelled' && new Date(l.starts_at).getTime() < Date.now() + 30 * 60e3 && <Link to={`/attendance/${l.id}`}><Button variant="primary">{l.status === 'done' ? tr('Посещаемость') : tr('Отметить посещаемость')}</Button></Link>}
+          {can('schedule.edit') && l.status !== 'cancelled' && <Button onClick={() => setSub(true)}>{tr('Заменить преподавателя')}</Button>}
+          {can('schedule.edit') && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setMove(true)}>{tr('Перенести')}</Button>}
+          {can('schedule.edit') && l.status === 'needs_decision' && <Button loading={keep.isPending} onClick={() => keep.mutate()}>{tr('Провести в этот день')}</Button>}
+          {(can('schedule.edit') || can('leads.edit')) && l.status !== 'done' && l.status !== 'cancelled' && <Button onClick={() => setTrial(true)}>{tr('+ Пробный ученик')}</Button>}
           {can('schedule.edit') && l.status !== 'done' && l.status !== 'cancelled' && (
             <>
-              <Button variant="danger" loading={cancel.isPending} onClick={() => confirm('Отменить только это занятие? Родители получат уведомление.') && cancel.mutate('this')}>Отменить</Button>
-              {l.schedule_id && <Button variant="danger" onClick={() => confirm('Отменить это и все последующие занятия серии?') && cancel.mutate('following')}>Отменить серию далее</Button>}
+              <Button variant="danger" loading={cancel.isPending} onClick={() => confirm(tr('Отменить только это занятие? Родители получат уведомление.')) && cancel.mutate('this')}>{tr('Отменить')}</Button>
+              {l.schedule_id && <Button variant="danger" onClick={() => confirm(tr('Отменить это и все последующие занятия серии?')) && cancel.mutate('following')}>{tr('Отменить серию далее')}</Button>}
             </>
           )}
         </div>
@@ -226,33 +227,33 @@ function LessonModal({ lesson, day, branch, onClose, onSaved }: { lesson?: Lesso
   })
   const live = checkQ.data ?? []
   return (
-    <Modal open title={lesson ? 'Перенос / замена' : 'Новое занятие'} onClose={onClose}
-      footer={<><Button onClick={onClose}>Отмена</Button>
-        {conflicts.length > 0 && <Button variant="danger" loading={m.isPending} onClick={() => m.mutate(true)}>Сохранить с конфликтом</Button>}
-        <Button variant="primary" loading={m.isPending} onClick={() => m.mutate(false)}>Сохранить</Button></>}>
+    <Modal open title={lesson ? tr('Перенос / замена') : tr('Новое занятие')} onClose={onClose}
+      footer={<><Button onClick={onClose}>{tr('Отмена')}</Button>
+        {conflicts.length > 0 && <Button variant="danger" loading={m.isPending} onClick={() => m.mutate(true)}>{tr('Сохранить с конфликтом')}</Button>}
+        <Button variant="primary" loading={m.isPending} onClick={() => m.mutate(false)}>{tr('Сохранить')}</Button></>}>
       <div className="space-y-4">
         {!lesson && (
-          <Field label="Группа или индивидуальное" error={errors.group_id}>
+          <Field label={tr('Группа или индивидуальное')} error={errors.group_id}>
             <Select value={f.group_id} onChange={(e) => setF({ ...f, group_id: e.target.value, teacher_id: '', classroom_id: '' })}>
-              <option value="">Выберите</option>
-              {groups.data?.filter((g) => !branch || g.branch_id === branch).map((g) => <option key={g.id} value={g.id}>{g.name}{g.type === 'individual' ? ' (индив.)' : ''}</option>)}
+              <option value="">{tr('Выберите')}</option>
+              {groups.data?.filter((g) => !branch || g.branch_id === branch).map((g) => <option key={g.id} value={g.id}>{g.name}{g.type === 'individual' ? tr(' (индив.)') : ''}</option>)}
             </Select>
           </Field>
         )}
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Дата"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-          <Field label="Начало"><Input type="time" value={f.start_time} onChange={(e) => setF({ ...f, start_time: e.target.value })} /></Field>
-          <Field label="Конец" error={errors.end_time}><Input type="time" value={f.end_time} onChange={(e) => setF({ ...f, end_time: e.target.value })} /></Field>
+          <Field label={tr('Дата')}><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <Field label={tr('Начало')}><Input type="time" value={f.start_time} onChange={(e) => setF({ ...f, start_time: e.target.value })} /></Field>
+          <Field label={tr('Конец')} error={errors.end_time}><Input type="time" value={f.end_time} onChange={(e) => setF({ ...f, end_time: e.target.value })} /></Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Преподаватель"><Select value={f.teacher_id} onChange={(e) => setF({ ...f, teacher_id: e.target.value })}><option value="">—</option>{teachers.data?.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</Select></Field>
-          <Field label="Кабинет"><Select value={f.classroom_id} onChange={(e) => setF({ ...f, classroom_id: e.target.value })}><option value="">—</option>{rooms.data?.filter((r) => !branchId || r.branch_id === branchId).map((r) => <option key={r.id} value={r.id}>{r.name}{r.capacity ? ` (${r.capacity})` : ''}</option>)}</Select></Field>
+          <Field label={tr('Преподаватель')}><Select value={f.teacher_id} onChange={(e) => setF({ ...f, teacher_id: e.target.value })}><option value="">—</option>{teachers.data?.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</Select></Field>
+          <Field label={tr('Кабинет')}><Select value={f.classroom_id} onChange={(e) => setF({ ...f, classroom_id: e.target.value })}><option value="">—</option>{rooms.data?.filter((r) => !branchId || r.branch_id === branchId).map((r) => <option key={r.id} value={r.id}>{r.name}{r.capacity ? ` (${r.capacity})` : ''}</option>)}</Select></Field>
         </div>
-        {!lesson && <Field label="Тип"><Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option value="regular">Обычное</option><option value="makeup">Отработка</option><option value="trial">Пробное</option><option value="online">Онлайн</option></Select></Field>}
+        {!lesson && <Field label={tr('Тип')}><Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option value="regular">{tr('Обычное')}</option><option value="makeup">{tr('Отработка')}</option><option value="trial">{tr('Пробное')}</option><option value="online">{tr('Онлайн')}</option></Select></Field>}
         {lesson?.schedule_id && (
-          <Field label="Применить изменение">
+          <Field label={tr('Применить изменение')}>
             <Select value={f.scope} onChange={(e) => setF({ ...f, scope: e.target.value })}>
-              <option value="this">Только это занятие</option><option value="following">Это и все последующие</option><option value="all">Вся серия (с сегодняшнего дня)</option>
+              <option value="this">{tr('Только это занятие')}</option><option value="following">{tr('Это и все последующие')}</option><option value="all">{tr('Вся серия (с сегодняшнего дня)')}</option>
             </Select>
           </Field>
         )}
@@ -268,9 +269,9 @@ function TrialModal({ lesson, onClose, onSaved }: { lesson: Lesson; onClose: () 
   const m = useMutation({ mutationFn: () => api.post(`/lessons/${lesson.id}/guests`, { lead_id: lead }), onSuccess: onSaved })
   const list = useMemo(() => leads.data ?? [], [leads.data])
   return (
-    <Modal open title="Записать на пробное занятие" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={!lead} loading={m.isPending} onClick={() => m.mutate()}>Записать</Button></>}>
-      <Select value={lead} onChange={(e) => setLead(e.target.value)}><option value="">Выберите лида</option>{list.map((l) => <option key={l.id} value={l.id}>{l.full_name}</option>)}</Select>
-      <p className="mt-2 text-xs text-muted">Пробный ученик появится в посещаемости преподавателя с пометкой «Пробный», лид перейдёт на этап «Записан на пробное». Пробное занятие с абонемента не списывается.</p>
+    <Modal open title={tr('Записать на пробное занятие')} onClose={onClose} footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" disabled={!lead} loading={m.isPending} onClick={() => m.mutate()}>{tr('Записать')}</Button></>}>
+      <Select value={lead} onChange={(e) => setLead(e.target.value)}><option value="">{tr('Выберите лида')}</option>{list.map((l) => <option key={l.id} value={l.id}>{l.full_name}</option>)}</Select>
+      <p className="mt-2 text-xs text-muted">{tr('Пробный ученик появится в посещаемости преподавателя с пометкой «Пробный», лид перейдёт на этап «Записан на пробное». Пробное занятие с абонемента не списывается.')}</p>
     </Modal>
   )
 }
@@ -285,26 +286,26 @@ function SubstituteModal({ lesson: l, onClose, onSaved }: { lesson: Lesson; onCl
   const m = useMutation({ mutationFn: () => api.post(`/lessons/${l.id}/substitute`, { teacher_id: pick, reason }), onSuccess: onSaved })
   const list = (q.data ?? []).filter((t) => !t.current)
   return (
-    <Modal open title="Замена преподавателя" onClose={onClose}
-      footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={!pick} loading={m.isPending} onClick={() => m.mutate()}>Заменить</Button></>}>
+    <Modal open title={tr('Замена преподавателя')} onClose={onClose}
+      footer={<><Button onClick={onClose}>{tr('Отмена')}</Button><Button variant="primary" disabled={!pick} loading={m.isPending} onClick={() => m.mutate()}>{tr('Заменить')}</Button></>}>
       <div className="space-y-3 text-sm">
-        <div className="text-muted">{l.group_name} · {dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}–{time(l.ends_at)}. Сейчас ведёт: <b className="text-ink">{l.teacher_name ?? '—'}</b></div>
-        {!q.data ? <Spinner /> : list.length === 0 ? <div className="py-6 text-center text-muted">В филиале нет других преподавателей</div> : (
+        <div className="text-muted">{l.group_name} · {dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}–{time(l.ends_at)}{tr('. Сейчас ведёт:')} <b className="text-ink">{l.teacher_name ?? '—'}</b></div>
+        {!q.data ? <Spinner /> : list.length === 0 ? <div className="py-6 text-center text-muted">{tr('В филиале нет других преподавателей')}</div> : (
           <div className="max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
             {list.map((t) => (
               <label key={t.id} className={cx('flex items-center gap-3 px-3 py-2.5', t.free ? 'cursor-pointer hover:bg-gray-50' : 'opacity-50')}>
                 <input type="radio" name="sub" disabled={!t.free} checked={pick === t.id} onChange={() => setPick(t.id)} className="accent-brand-600" />
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium">{t.full_name}{t.main && <span className="ml-1 text-xs text-muted">(основной преподаватель группы)</span>}</div>
-                  <div className="truncate text-xs text-muted">{t.free ? (t.subjects.join(', ') || 'Свободен') : `Занят: ${t.busy}`}</div>
+                  <div className="font-medium">{t.full_name}{t.main && <span className="ml-1 text-xs text-muted">{tr('(основной преподаватель группы)')}</span>}</div>
+                  <div className="truncate text-xs text-muted">{t.free ? (t.subjects.join(', ') || tr('Свободен')) : tr('Занят: {0}', t.busy)}</div>
                 </div>
-                {t.free ? <Badge tone="green">Свободен</Badge> : <Badge>Занят</Badge>}
+                {t.free ? <Badge tone="green">{tr('Свободен')}</Badge> : <Badge>{tr('Занят')}</Badge>}
               </label>
             ))}
           </div>
         )}
-        <Field label="Причина замены"><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Болезнь, отпуск…" /></Field>
-        <p className="text-xs text-muted">Занятие появится в кабинете нового преподавателя, ему придёт сообщение в Telegram. Начисление за урок получит тот, кто его провёл.{l.status === 'done' && ' Занятие уже проведено — начисление будет перенесено.'}</p>
+        <Field label={tr('Причина замены')}><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={tr('Болезнь, отпуск…')} /></Field>
+        <p className="text-xs text-muted">{tr('Занятие появится в кабинете нового преподавателя, ему придёт сообщение в Telegram. Начисление за урок получит тот, кто его провёл.')}{l.status === 'done' && tr(' Занятие уже проведено — начисление будет перенесено.')}</p>
         {m.error && <div className="text-red-700">{(m.error as Error).message}</div>}
       </div>
     </Modal>

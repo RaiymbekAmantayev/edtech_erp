@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { api } from '../lib/api'
 import { money, parseMoney, date, phone } from '../lib/format'
-import { label } from '../lib/i18n'
+import { label, tr, intlLocale } from '../lib/i18n'
 import type { CField, CFBlock } from '../lib/types'
 import { Badge, Checkbox, Field, Input, Select, Textarea, cx } from './ui'
 
@@ -19,10 +19,10 @@ export function useBlocks(entity: string) {
 }
 
 export const fieldTypes: { value: string; label: string }[] = [
-  { value: 'string', label: 'Строка' }, { value: 'text', label: 'Текст' }, { value: 'integer', label: 'Число' }, { value: 'money', label: 'Деньги' },
-  { value: 'date', label: 'Дата' }, { value: 'boolean', label: 'Да / Нет' }, { value: 'select', label: 'Список' }, { value: 'multiselect', label: 'Мультисписок' },
-  { value: 'phone', label: 'Телефон' }, { value: 'url', label: 'Ссылка' }, { value: 'decimal', label: 'Дробное' }, { value: 'email', label: 'Email' },
-  { value: 'datetime', label: 'Дата и время' }, { value: 'file', label: 'Файл' }, { value: 'employee', label: 'Сотрудник' }, { value: 'relation', label: 'Связь' },
+  { value: 'string', label: tr('Строка') }, { value: 'text', label: tr('Текст') }, { value: 'integer', label: tr('Число') }, { value: 'money', label: tr('Деньги') },
+  { value: 'date', label: tr('Дата') }, { value: 'boolean', label: tr('Да / Нет') }, { value: 'select', label: tr('Список') }, { value: 'multiselect', label: tr('Мультисписок') },
+  { value: 'phone', label: tr('Телефон') }, { value: 'url', label: tr('Ссылка') }, { value: 'decimal', label: tr('Дробное') }, { value: 'email', label: 'Email' },
+  { value: 'datetime', label: tr('Дата и время') }, { value: 'file', label: tr('Файл') }, { value: 'employee', label: tr('Сотрудник') }, { value: 'relation', label: tr('Связь') },
 ]
 export const typeLabel = (t: string) => fieldTypes.find((x) => x.value === t)?.label ?? t
 
@@ -35,10 +35,10 @@ export function cfDisplay(f: CField, v: unknown): ReactNode {
     case 'select': return optLabel(f, v)
     case 'multiselect':
       return <span className="flex flex-wrap gap-1">{(v as string[]).map((id) => <Badge key={id} tone="gray" className="!font-medium">{optLabel(f, id)}</Badge>)}</span>
-    case 'boolean': return v ? 'Да' : 'Нет'
+    case 'boolean': return v ? tr('Да') : tr('Нет')
     case 'money': return money(Number(v))
     case 'date': return date(String(v))
-    case 'datetime': return new Date(String(v)).toLocaleString('ru-RU')
+    case 'datetime': return new Date(String(v)).toLocaleString(intlLocale())
     case 'phone': return phone(String(v))
     case 'url': return <a href={String(v)} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{String(v).replace(/^https?:\/\//, '').slice(0, 40)}</a>
   }
@@ -49,7 +49,7 @@ export function cfText(f: CField, v: unknown): string {
   if (v === undefined || v === null || v === '') return ''
   if (f.field_type === 'select') return optLabel(f, v)
   if (f.field_type === 'multiselect') return (v as string[]).map((id) => optLabel(f, id)).join(', ')
-  if (f.field_type === 'boolean') return v ? 'Да' : 'Нет'
+  if (f.field_type === 'boolean') return v ? tr('Да') : tr('Нет')
   if (f.field_type === 'money') return money(Number(v))
   return String(v)
 }
@@ -85,8 +85,8 @@ export function CFInput({ field: f, value, onChange, error, required }: { field:
     case 'select':
       input = (
         <Select value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value || null)} className={cx(error && 'border-red-400')}>
-          <option value="">— не выбрано —</option>
-          {opts.map((o) => <option key={o.id} value={o.id}>{label(o.label)}{o.archived_at ? ' (архивный)' : ''}</option>)}
+          <option value="">{tr('— не выбрано —')}</option>
+          {opts.map((o) => <option key={o.id} value={o.id}>{label(o.label)}{o.archived_at ? tr(' (архивный)') : ''}</option>)}
         </Select>
       )
       break

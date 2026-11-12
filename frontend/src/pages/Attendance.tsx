@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth'
 import { addDays, dateTime, dayStart, isoDay, plural, time } from '../lib/format'
 import type { Lesson } from '../lib/types'
 import { Badge, Card, Input, Segmented, Spinner, StatusBadge, Table, attendanceStatus, lessonState } from '../components/ui'
+import { tr } from '../lib/i18n'
 
 export default function Attendance() {
   const { can, branchId, isTeacherOnly } = useAuth()
@@ -21,15 +22,15 @@ export default function Attendance() {
   return (
     <div className="mx-auto max-w-[1300px] p-4 lg:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[26px] font-bold">Посещаемость</h1>
+        <h1 className="text-[26px] font-bold">{tr('Посещаемость')}</h1>
         <Segmented value={tab} onChange={setTab} items={[
-          { value: 'today', label: 'Сегодня' }, { value: 'unmarked', label: 'Требует отметки' },
-          ...(can('attendance.view') && !isTeacherOnly ? [{ value: 'report' as const, label: 'Отчёт по группам' }, { value: 'changes' as const, label: 'Изменения' }] : []),
+          { value: 'today', label: tr('Сегодня') }, { value: 'unmarked', label: tr('Требует отметки') },
+          ...(can('attendance.view') && !isTeacherOnly ? [{ value: 'report' as const, label: tr('Отчёт по группам') }, { value: 'changes' as const, label: tr('Изменения') }] : []),
         ]} />
       </div>
       {(tab === 'today' || tab === 'unmarked') && (lessons.isLoading ? <Spinner /> : (
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {(lessons.data ?? []).length === 0 && <div className="col-span-full py-12 text-center text-sm text-muted">{tab === 'unmarked' ? 'Все прошедшие занятия отмечены 👍' : 'Сегодня занятий нет'}</div>}
+          {(lessons.data ?? []).length === 0 && <div className="col-span-full py-12 text-center text-sm text-muted">{tab === 'unmarked' ? tr('Все прошедшие занятия отмечены 👍') : tr('Сегодня занятий нет')}</div>}
           {lessons.data?.map((l) => (
             <Link key={l.id} to={`/attendance/${l.id}`} className="rounded-xl border border-line bg-white p-4 hover:border-gray-300">
               <div className="flex items-start justify-between gap-2">
@@ -37,8 +38,8 @@ export default function Attendance() {
                 <StatusBadge map={lessonState} value={l.state} />
               </div>
               <div className="mt-3 flex items-center justify-between text-[13px]">
-                <span className="text-muted">{l.teacher_name} · {l.students} {plural(l.students, 'ученик', 'ученика', 'учеников')}{l.trials ? ` + ${l.trials} пробный` : ''}</span>
-                <span className="font-medium text-brand-600">{l.status === 'done' ? 'Открыть' : 'Отметить →'}</span>
+                <span className="text-muted">{l.teacher_name} · {l.students} {plural(l.students, tr('ученик'), tr('ученика'), tr('учеников'))}{l.trials ? tr(' + {0} пробный', l.trials) : ''}</span>
+                <span className="font-medium text-brand-600">{l.status === 'done' ? tr('Открыть') : tr('Отметить →')}</span>
               </div>
             </Link>
           ))}
@@ -49,7 +50,7 @@ export default function Attendance() {
           <div className="mt-5 flex items-center gap-2"><Input type="date" className="!h-9 w-auto" value={from} onChange={(e) => setFrom(e.target.value)} /> — <Input type="date" className="!h-9 w-auto" value={to} onChange={(e) => setTo(e.target.value)} /></div>
           <Card className="mt-4" bodyClass="!p-0">
             {report.isLoading ? <Spinner /> : (
-              <Table head={['Группа', 'Преподаватель', 'Проведено', 'Без отметки', 'Был/опоздал', 'Не был', 'Уваж.', 'Посещаемость']}>
+              <Table head={[tr('Группа'), tr('Преподаватель'), tr('Проведено'), tr('Без отметки'), tr('Был/опоздал'), tr('Не был'), tr('Уваж.'), tr('Посещаемость')]}>
                 {report.data?.map((r) => (
                   <tr key={r.group_id}>
                     <td className="px-4 py-3 font-medium"><Link to={`/groups/${r.group_id}`} className="hover:text-brand-600">{r.group}</Link></td>
@@ -67,7 +68,7 @@ export default function Attendance() {
       )}
       {tab === 'changes' && (
         <Card className="mt-5" bodyClass="!p-0">
-          <Table head={['Когда', 'Ученик', 'Занятие', 'Изменение', 'Причина', 'Кто']}>
+          <Table head={[tr('Когда'), tr('Ученик'), tr('Занятие'), tr('Изменение'), tr('Причина'), tr('Кто')]}>
             {changes.data?.map((c, i) => (
               <tr key={i}>
                 <td className="px-4 py-3 text-[13px] text-muted">{dateTime(c.changed_at)}</td>
@@ -79,7 +80,7 @@ export default function Attendance() {
               </tr>
             ))}
           </Table>
-          {changes.data?.length === 0 && <div className="py-10 text-center text-sm text-muted">Отметки не исправлялись</div>}
+          {changes.data?.length === 0 && <div className="py-10 text-center text-sm text-muted">{tr('Отметки не исправлялись')}</div>}
         </Card>
       )}
     </div>

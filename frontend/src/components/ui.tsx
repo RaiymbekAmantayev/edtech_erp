@@ -1,5 +1,6 @@
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { X, Loader2 } from 'lucide-react'
+import { tr } from '../lib/i18n'
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ')
 
@@ -81,21 +82,21 @@ export const Badge = ({ tone = 'gray', children, className }: { tone?: Tone; chi
 
 // Единые цвета статусов для всех экранов (ТЗ 29.3).
 export const studentStatus: Record<string, [string, Tone]> = {
-  registration: ['Регистрация', 'gray'], active: ['Занимается', 'green'], frozen: ['Заморожен', 'blue'],
-  graduated: ['Выпускник', 'teal'], inactive: ['Не занимается', 'orange'], archived: ['Архив', 'gray'],
+  registration: [tr('Регистрация'), 'gray'], active: [tr('Занимается'), 'green'], frozen: [tr('Заморожен'), 'blue'],
+  graduated: [tr('Выпускник'), 'teal'], inactive: [tr('Не занимается'), 'orange'], archived: [tr('Архив'), 'gray'],
 }
 export const lessonState: Record<string, [string, Tone]> = {
-  done: ['Проведено', 'green'], needs_marking: ['Требует отметки', 'red'], in_progress: ['Идёт сейчас', 'blue'],
-  trial: ['Пробное', 'purple'], planned: ['Запланировано', 'gray'], cancelled: ['Отменено', 'gray'], needs_decision: ['Требует решения', 'yellow'],
+  done: [tr('Проведено'), 'green'], needs_marking: [tr('Требует отметки'), 'red'], in_progress: [tr('Идёт сейчас'), 'blue'],
+  trial: [tr('Пробное'), 'purple'], planned: [tr('Запланировано'), 'gray'], cancelled: [tr('Отменено'), 'gray'], needs_decision: [tr('Требует решения'), 'yellow'],
 }
 export const attendanceStatus: Record<string, [string, string, Tone]> = {
-  present: ['Был', 'П', 'green'], late: ['Опоздал', 'О', 'yellow'], absent: ['Не был', 'Н', 'red'], excused: ['Уваж.', 'У', 'blue'], trial: ['Пробный', 'Пр', 'purple'],
+  present: [tr('Был'), tr('П'), 'green'], late: [tr('Опоздал'), tr('О'), 'yellow'], absent: [tr('Не был'), tr('Н'), 'red'], excused: [tr('Уваж.'), tr('У'), 'blue'], trial: [tr('Пробный'), tr('Пр'), 'purple'],
 }
 export const leadStages: Record<string, [string, Tone]> = {
-  new: ['Новое обращение', 'blue'], contacted: ['Связались', 'gray'], trial_scheduled: ['Записан на пробное', 'purple'],
-  trial_done: ['Пробное проведено', 'teal'], won: ['Оплатил', 'green'], lost: ['Отказ', 'red'],
+  new: [tr('Новое обращение'), 'blue'], contacted: [tr('Связались'), 'gray'], trial_scheduled: [tr('Записан на пробное'), 'purple'],
+  trial_done: [tr('Пробное проведено'), 'teal'], won: [tr('Оплатил'), 'green'], lost: [tr('Отказ'), 'red'],
 }
-export const paymentMethods: Record<string, string> = { kaspi: 'Kaspi перевод', cash: 'Наличные', card: 'Карта', transfer: 'Банковский перевод', online: 'Онлайн-оплата', other: 'Другое' }
+export const paymentMethods: Record<string, string> = { kaspi: tr('Kaspi перевод'), cash: tr('Наличные'), card: tr('Карта'), transfer: tr('Банковский перевод'), online: tr('Онлайн-оплата'), other: tr('Другое') }
 
 export const StatusBadge = ({ map, value }: { map: Record<string, [string, Tone]>; value: string }) => {
   const [l, t] = map[value] ?? [value, 'gray' as Tone]
@@ -115,7 +116,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
       <div role="dialog" aria-modal className={cx('w-full rounded-2xl bg-white shadow-xl', wide === 'xl' ? 'max-w-5xl' : wide ? 'max-w-3xl' : 'max-w-lg')}>
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h3 className="text-base font-semibold">{title}</h3>
-          <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-gray-100" aria-label="Закрыть"><X className="size-5" /></button>
+          <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-gray-100" aria-label={tr('Закрыть')}><X className="size-5" /></button>
         </div>
         <div className="px-6 py-5">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-line px-6 py-4">{footer}</div>}
@@ -131,7 +132,7 @@ export function Drawer({ open, onClose, title, children }: { open: boolean; onCl
       <aside className="flex h-full w-full max-w-xl flex-col bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h3 className="text-base font-semibold">{title}</h3>
-          <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-gray-100" aria-label="Закрыть"><X className="size-5" /></button>
+          <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-gray-100" aria-label={tr('Закрыть')}><X className="size-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
       </aside>

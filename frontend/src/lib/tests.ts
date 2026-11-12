@@ -1,3 +1,4 @@
+import { tr } from './i18n'
 // Модуль «Тестирование»: типы тестов, навыки, оценки и результаты.
 export type TestSkill = { id: string; name: string; archived: boolean }
 export type TestGrade = { id: string; name: string; color: string | null; min_percent: number | null; archived: boolean }
@@ -36,8 +37,8 @@ export type TestResult = {
   scores: { skill_id: string; skill: string; score: number | null; max_score: number | null; grade: GradeRef | null }[]
 }
 
-export const scoringLabel = { score: 'Баллы по навыкам', grade: 'Оценка по навыкам' }
-export const lessonModeLabel: Record<LessonMode, string> = { off: 'Не на уроке', optional: 'На уроке, необязательный', required: 'На уроке, обязательный' }
+export const scoringLabel = { score: tr('Баллы по навыкам'), grade: tr('Оценка по навыкам') }
+export const lessonModeLabel: Record<LessonMode, string> = { off: tr('Не на уроке'), optional: tr('На уроке, необязательный'), required: tr('На уроке, обязательный') }
 
 export const num = (n: number | null | undefined) => (n == null ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','))
 

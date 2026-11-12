@@ -30,6 +30,7 @@ import PlatformLayout from './pages/platform/PlatformLayout'
 import Organizations from './pages/platform/Organizations'
 import OrganizationCard from './pages/platform/OrganizationCard'
 import { PlatformPlans, PlatformSystem, PlatformHolidays } from './pages/platform/PlatformMisc'
+import { tr } from './lib/i18n'
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -42,7 +43,7 @@ function Guard({ children, perm }: { children: ReactNode; perm?: string | string
   if (loading) return <Spinner className="h-full" />
   if (!me) return <Navigate to="/login" replace />
   if (me.is_platform_admin) return <Navigate to="/platform" replace />
-  if (perm && !(Array.isArray(perm) ? perm.some(can) : can(perm))) return <div className="p-10 text-center text-muted">Недостаточно прав для этого раздела</div>
+  if (perm && !(Array.isArray(perm) ? perm.some(can) : can(perm))) return <div className="p-10 text-center text-muted">{tr('Недостаточно прав для этого раздела')}</div>
   return <>{children}</>
 }
 

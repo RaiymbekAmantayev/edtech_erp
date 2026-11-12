@@ -50,6 +50,8 @@ type dto struct {
 	Status      string         `json:"status"`
 	PayType     string         `json:"pay_type"`
 	PayRate     *int64         `json:"pay_rate_tiyn,omitempty"`
+	PayPercent  *int           `json:"pay_percent,omitempty"` // комбинированная модель: процент × 100
+	PayrollView string         `json:"payroll_visible"`       // school — как в настройках школы, show, hide
 	Groups      int            `json:"groups_count"`
 	WeekLessons int            `json:"week_lessons"`
 	CF          map[string]any `json:"custom_fields"`
@@ -66,7 +68,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 	out := []dto{}
 	err := h.DB.Tx(r.Context(), func(tx pgx.Tx) error {
 		rows, err := tx.Query(r.Context(), `SELECT e.id, e.user_id, e.full_name, e.phone, e.email, e.position, e.is_teacher, e.subjects, e.branch_ids::text[], e.hired_at, e.status,
-			e.pay_type, e.pay_rate_tiyn, e.custom_fields,
+			e.pay_type, e.pay_rate_tiyn, e.pay_percent, e.payroll_visible, e.custom_fields,
 			(SELECT count(*) FROM groups g WHERE g.teacher_id=e.id AND g.status='active'),
 			(SELECT count(*) FROM lessons l WHERE l.teacher_id=e.id AND l.status<>'cancelled' AND l.starts_at >= date_trunc('week', NOW()) AND l.starts_at < date_trunc('week', NOW()) + interval '7 days'),
 			coalesce((SELECT array_agg(r.code) FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=e.user_id), '{}')
@@ -78,12 +80,16 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 		for rows.Next() {
 			var d dto
 			var rate int64
+			var pct int
+			var visible *bool
 			if err := rows.Scan(&d.ID, &d.UserID, &d.FullName, &d.Phone, &d.Email, &d.Position, &d.IsTeacher, &d.Subjects, &d.BranchIDs, &d.HiredAt, &d.Status,
-				&d.PayType, &rate, &d.CF, &d.Groups, &d.WeekLessons, &d.Roles); err != nil {
+				&d.PayType, &rate, &pct, &visible, &d.CF, &d.Groups, &d.WeekLessons, &d.Roles); err != nil {
 				return err
 			}
+			d.PayrollView = payrollView(visible)
 			if p.Can("employees.edit") || p.Can("finance.view") {
 				d.PayRate = &rate
+				d.PayPercent = &pct
 			}
 			if bf := p.BranchFilter(); bf != nil && len(d.BranchIDs) > 0 {
 				ok := false
@@ -110,11 +116,15 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 	err := h.DB.Tx(r.Context(), func(tx pgx.Tx) error {
 		var d dto
 		var rate int64
-		if err := tx.QueryRow(r.Context(), `SELECT e.id, e.user_id, e.full_name, e.phone, e.email, e.position, e.is_teacher, e.subjects, e.branch_ids::text[], e.hired_at, e.status, e.pay_type, e.pay_rate_tiyn, e.custom_fields
-			FROM employees e WHERE id=$1`, id).Scan(&d.ID, &d.UserID, &d.FullName, &d.Phone, &d.Email, &d.Position, &d.IsTeacher, &d.Subjects, &d.BranchIDs, &d.HiredAt, &d.Status, &d.PayType, &rate, &d.CF); err != nil {
+		var pct int
+		var visible *bool
+		if err := tx.QueryRow(r.Context(), `SELECT e.id, e.user_id, e.full_name, e.phone, e.email, e.position, e.is_teacher, e.subjects, e.branch_ids::text[], e.hired_at, e.status, e.pay_type, e.pay_rate_tiyn, e.pay_percent, e.payroll_visible, e.custom_fields
+			FROM employees e WHERE id=$1`, id).Scan(&d.ID, &d.UserID, &d.FullName, &d.Phone, &d.Email, &d.Position, &d.IsTeacher, &d.Subjects, &d.BranchIDs, &d.HiredAt, &d.Status, &d.PayType, &rate, &pct, &visible, &d.CF); err != nil {
 			return err
 		}
 		d.PayRate = &rate
+		d.PayPercent = &pct
+		d.PayrollView = payrollView(visible)
 		out["employee"] = d
 		rows, err := tx.Query(r.Context(), `SELECT g.id, g.name, c.name, (SELECT count(*) FROM group_students gs WHERE gs.group_id=g.id AND gs.left_at IS NULL)
 			FROM groups g JOIN courses c ON c.id=g.course_id WHERE g.teacher_id=$1 AND g.status='active' ORDER BY g.name`, id)
@@ -155,6 +165,8 @@ type input struct {
 	Status    *string        `json:"status"`
 	PayType   *string        `json:"pay_type"`
 	PayRate   *int64         `json:"pay_rate_tiyn"`
+	PayPct    *int           `json:"pay_percent"`
+	PayView   *string        `json:"payroll_visible"` // school, show, hide
 	CF        map[string]any `json:"custom_fields"`
 	// доступ в систему
 	CreateAccess bool     `json:"create_access"`
@@ -189,6 +201,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 		if len([]rune(in.Password)) < 10 {
 			v.Add("password", "TOO_SHORT")
 		}
+	}
+	if in.PayPct != nil && (*in.PayPct < 0 || *in.PayPct > 10000) {
+		v.Add("pay_percent", "OUT_OF_RANGE")
+	}
+	visible, visibleOK := viewValue(in.PayView)
+	if !visibleOK {
+		v.Add("payroll_visible", "INVALID_VALUE")
 	}
 	if err := v.Err(); err != nil {
 		return err
@@ -232,11 +251,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 		if in.PayRate != nil {
 			rate = *in.PayRate
 		}
+		pct := 0
+		if in.PayPct != nil {
+			pct = *in.PayPct
+		}
 		cf, _ := json.Marshal(orEmpty(in.CF))
-		if err := tx.QueryRow(ctx, `INSERT INTO employees (tenant_id, user_id, full_name, phone, email, position, is_teacher, subjects, branch_ids, hired_at, pay_type, pay_rate_tiyn, custom_fields)
-			VALUES (app_current_tenant(), $1, $2, NULLIF($3,''), NULLIF($4,''), $5, $6, $7, $8::uuid[], NULLIF($9,'')::date, $10, $11, $12) RETURNING id`,
+		if err := tx.QueryRow(ctx, `INSERT INTO employees (tenant_id, user_id, full_name, phone, email, position, is_teacher, subjects, branch_ids, hired_at, pay_type, pay_rate_tiyn, custom_fields, pay_percent, payroll_visible)
+			VALUES (app_current_tenant(), $1, $2, NULLIF($3,''), NULLIF($4,''), $5, $6, $7, $8::uuid[], NULLIF($9,'')::date, $10, $11, $12, $13, $14) RETURNING id`,
 			userID, strings.TrimSpace(*in.FullName), phone, email, httpx.Ptr(deref(in.Position)), isTeacher, orStrings(in.Subjects), orStrings(in.BranchIDs),
-			deref(in.HiredAt), payType, rate, cf).Scan(&id); err != nil {
+			deref(in.HiredAt), payType, rate, cf, pct, visible).Scan(&id); err != nil {
 			return err
 		}
 		return database.Audit(ctx, tx, "employee", id, "create", nil, map[string]any{"full_name": *in.FullName, "access": in.CreateAccess, "roles": in.Roles})
@@ -318,6 +341,19 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		if in.PayRate != nil {
 			errs = append(errs, set("pay_rate_tiyn=$2", *in.PayRate))
+		}
+		if in.PayPct != nil {
+			if *in.PayPct < 0 || *in.PayPct > 10000 {
+				return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "pay_percent", Code: "OUT_OF_RANGE"}}}).Err()
+			}
+			errs = append(errs, set("pay_percent=$2", *in.PayPct))
+		}
+		if in.PayView != nil {
+			visible, ok := viewValue(in.PayView)
+			if !ok {
+				return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "payroll_visible", Code: "INVALID_VALUE"}}}).Err()
+			}
+			errs = append(errs, set("payroll_visible=$2", visible))
 		}
 		if in.CF != nil {
 			b, _ := json.Marshal(in.CF)
@@ -512,3 +548,33 @@ func orEmpty(m map[string]any) map[string]any {
 }
 
 var _ = customfield.Masked
+
+// payrollView — показ начислений в кабинете преподавателя для API: school (как в настройках школы), show, hide.
+func payrollView(v *bool) string {
+	switch {
+	case v == nil:
+		return "school"
+	case *v:
+		return "show"
+	default:
+		return "hide"
+	}
+}
+
+// viewValue разбирает school/show/hide в значение колонки employees.payroll_visible (NULL — как в школе).
+func viewValue(s *string) (*bool, bool) {
+	if s == nil {
+		return nil, true
+	}
+	switch *s {
+	case "school", "":
+		return nil, true
+	case "show":
+		t := true
+		return &t, true
+	case "hide":
+		f := false
+		return &f, true
+	}
+	return nil, false
+}

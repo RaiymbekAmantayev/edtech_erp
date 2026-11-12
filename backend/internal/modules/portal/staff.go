@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"emp/internal/modules/payroll"
 	"emp/internal/platform/auth"
 	"emp/internal/platform/database"
 	"emp/internal/platform/httpx"
@@ -78,6 +79,12 @@ func (h *Handler) teacherCabinet(w http.ResponseWriter, r *http.Request) error {
 		}
 		out["stats"] = map[string]any{"lessons_month": monthDone, "lessons_total": totalDone, "unmarked": unmarked,
 			"groups": groups, "students": students, "attendance_rate_30d": rate}
+		// показывать ли блок «Начисления»: настройка в карточке преподавателя, иначе — настройка школы
+		visible, err := payroll.Visible(ctx, tx, emp)
+		if err != nil {
+			return err
+		}
+		out["payroll_visible"] = visible
 
 		lessonQ := `SELECT l.id::text, l.starts_at, l.ends_at, l.status, g.name, NULL::text, cl.name, l.topic, l.meeting_url
 			FROM lessons l JOIN groups g ON g.id=l.group_id LEFT JOIN classrooms cl ON cl.id=l.classroom_id WHERE l.teacher_id=$1 AND `

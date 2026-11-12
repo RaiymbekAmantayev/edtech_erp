@@ -1,3 +1,4 @@
+import { tr } from './i18n'
 // HTTP-клиент: access-токен в памяти, refresh-токен — в httpOnly-cookie (обновляется автоматически при 401).
 export type FieldError = { field: string; code: string }
 export class ApiError extends Error {
@@ -57,10 +58,10 @@ export async function request<T = unknown>(method: string, path: string, body?: 
   const json = text ? JSON.parse(text) : {}
   if (!r.ok) {
     const e = json.error ?? {}
-    throw new ApiError(r.status, e.code ?? 'ERROR', e.message ?? 'Ошибка запроса', e.fields ?? [])
+    throw new ApiError(r.status, e.code ?? 'ERROR', e.message ?? tr('Ошибка запроса'), e.fields ?? [])
   }
   // конфликт расписания приходит как 200 с requires_force
-  if (json.meta?.requires_force) throw new ApiError(409, 'SCHEDULE_CONFLICT', 'Конфликт расписания', [], json.meta)
+  if (json.meta?.requires_force) throw new ApiError(409, 'SCHEDULE_CONFLICT', tr('Конфликт расписания'), [], json.meta)
   return { data: json.data as T, meta: json.meta ?? {} }
 }
 
@@ -79,7 +80,7 @@ export async function download(path: string) {
   const go = () => fetch('/api/v1' + path, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} })
   let r = await go()
   if (r.status === 401 && (await refresh())) r = await go()
-  if (!r.ok) throw new ApiError(r.status, 'EXPORT_FAILED', 'Не удалось выгрузить файл')
+  if (!r.ok) throw new ApiError(r.status, 'EXPORT_FAILED', tr('Не удалось выгрузить файл'))
   const blob = await r.blob()
   const name = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') ?? '')?.[1] ?? 'export'
   const a = document.createElement('a')
@@ -90,11 +91,11 @@ export async function download(path: string) {
 }
 
 const codes: Record<string, string> = {
-  REQUIRED: 'Обязательное поле', INVALID_FORMAT: 'Неверный формат', INVALID_IIN: 'Неверный ИИН', TOO_SHORT: 'Слишком коротко',
-  TOO_LONG: 'Слишком длинно', TOO_SMALL: 'Меньше допустимого', TOO_LARGE: 'Больше допустимого', INVALID_NUMBER: 'Введите число',
-  INVALID_DATE: 'Неверная дата', INVALID_OPTION: 'Выберите вариант из списка', INVALID_URL: 'Ссылка должна начинаться с http(s)://',
-  NOT_UNIQUE: 'Значение уже используется', CUSTOM_FIELD_READ_ONLY: 'Нет прав на изменение', INVALID_TIME: 'Неверное время',
-  EXCEEDS_PAYMENT: 'Больше суммы платежа', INVALID: 'Неверное значение', IN_FUTURE: 'Дата в будущем', INVALID_MONEY: 'Неверная сумма',
+  REQUIRED: tr('Обязательное поле'), INVALID_FORMAT: tr('Неверный формат'), INVALID_IIN: tr('Неверный ИИН'), TOO_SHORT: tr('Слишком коротко'),
+  TOO_LONG: tr('Слишком длинно'), TOO_SMALL: tr('Меньше допустимого'), TOO_LARGE: tr('Больше допустимого'), INVALID_NUMBER: tr('Введите число'),
+  INVALID_DATE: tr('Неверная дата'), INVALID_OPTION: tr('Выберите вариант из списка'), INVALID_URL: tr('Ссылка должна начинаться с http(s)://'),
+  NOT_UNIQUE: tr('Значение уже используется'), CUSTOM_FIELD_READ_ONLY: tr('Нет прав на изменение'), INVALID_TIME: tr('Неверное время'),
+  EXCEEDS_PAYMENT: tr('Больше суммы платежа'), INVALID: tr('Неверное значение'), IN_FUTURE: tr('Дата в будущем'), INVALID_MONEY: tr('Неверная сумма'),
 }
 export const fieldErrorText = (code: string) => codes[code] ?? code
 
