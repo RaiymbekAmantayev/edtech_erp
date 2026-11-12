@@ -15,6 +15,7 @@ const permGroups: [string, [string, string][]][] = [
   ['Группы и курсы', [['groups.view', 'Просмотр'], ['groups.edit', 'Изменение']]],
   ['Расписание', [['schedule.view', 'Просмотр всего'], ['schedule.edit', 'Изменение']]],
   ['Посещаемость', [['attendance.view', 'Просмотр'], ['attendance.mark', 'Отметка'], ['attendance.edit_closed', 'Изменение закрытой']]],
+  ['Тестирование', [['tests.conduct', 'Проведение тестов и ввод результатов']]],
   ['Финансы', [['finance.view', 'Просмотр'], ['payments.create', 'Приём оплат'], ['payments.refund', 'Возвраты и корректировки'], ['subscriptions.edit', 'Абонементы']]],
   ['Прочее', [['reports.view', 'Отчёты'], ['employees.view', 'Сотрудники: просмотр'], ['employees.edit', 'Сотрудники: изменение'], ['audit.view', 'Журнал действий']]],
   ['Администрирование', [['settings.manage', 'Настройки'], ['custom_fields.manage', 'Пользовательские поля'], ['roles.manage', 'Роли и права'], ['branches.manage', 'Филиалы'], ['billing.manage', 'Тариф и подписка']]],

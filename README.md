@@ -38,6 +38,7 @@ backend/
   migrations/                           SQL-миграции (встраиваются в бинарник)
 frontend/src/                           React + TypeScript + Tailwind + TanStack Query
 tests/api-flow.mjs                      сценарный тест API по критериям готовности MVP
+tests/testing-flow.mjs                  сценарный тест модуля «Тестирование» (типы тестов, навыки, оценки, Mini App)
 ```
 
 ## Ключевые решения
@@ -63,6 +64,7 @@ tests/api-flow.mjs                      сценарный тест API по к�
 ```powershell
 cd backend; go test ./...             # валидация, пользовательские поля, интеграционный тест RLS-изоляции (нужна локальная БД)
 node tests/api-flow.mjs               # 32 сценарные проверки по API (запущенный API; меняет демо-данные)
+node tests/testing-flow.mjs           # 23 проверки модуля «Тестирование» (создаёт тестовые записи в демо-центре)
 ```
 
 ## Личный кабинет и Telegram-боты школ

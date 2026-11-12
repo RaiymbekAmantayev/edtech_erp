@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 import { ApiError, api } from '../../lib/api'
-import { dateTime } from '../../lib/format'
+import { dateTime, plural } from '../../lib/format'
+import type { TestConfig } from '../../lib/tests'
 import { Badge, Banner, Button, Card, Checkbox, Field, Input, Spinner, Stat, Textarea, Toast } from '../../components/ui'
 
 type Bot = {
@@ -107,6 +109,8 @@ export default function TelegramBot() {
         </>
       )}
 
+      <MiniAppTests onSaved={() => setToast('Сохранено')} />
+
       <Card title="Личный кабинет">
         <div className="space-y-2 text-sm">
           <p>Ученики и родители входят по своему ИИН из карточки (пароль при первом входе — <b>12345</b>). Преподаватели — по ссылке-приглашению из раздела «Преподаватели».</p>
@@ -119,5 +123,33 @@ export default function TelegramBot() {
       </Card>
       {toast && <Toast text={toast} onDone={() => setToast('')} />}
     </div>
+  )
+}
+
+// Какие тесты преподаватель видит и может проводить в Telegram Mini App.
+function MiniAppTests({ onSaved }: { onSaved: () => void }) {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['tests-config', 'admin', false], queryFn: () => api.get<TestConfig>('/tests/config') })
+  const m = useMutation({
+    mutationFn: ({ id, show }: { id: string; show: boolean }) => api.patch(`/test-types/${id}`, { show_in_miniapp: show }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tests-config'] }); onSaved() },
+  })
+  const types = q.data?.types.filter((t) => !t.archived) ?? []
+  return (
+    <Card title="Тесты в кабинете преподавателя" action={<Link to="/settings/testing" className="text-sm text-brand-600">Настроить тесты</Link>}>
+      {!q.data ? <Spinner /> : types.length === 0 ? (
+        <p className="text-sm text-muted">Типы тестов ещё не созданы. Добавьте их в разделе «Тестирование» — затем здесь можно выбрать, какие из них преподаватели проводят из Telegram.</p>
+      ) : (
+        <>
+          <p className="mb-3 text-sm text-muted">Отмеченные тесты преподаватель видит во вкладке «Тесты» Mini App и может внести результаты своих групп. Остальные доступны только в веб-версии.</p>
+          <div className="space-y-3">
+            {types.map((t) => (
+              <Checkbox key={t.id} checked={t.show_in_miniapp} disabled={m.isPending} onChange={(v) => m.mutate({ id: t.id, show: v })}
+                label={<span>{t.name} <span className="text-muted">· {t.skills.length} {plural(t.skills.length, 'навык', 'навыка', 'навыков')}</span></span>} />
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
   )
 }

@@ -1,11 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Route, Routes, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BarChart3, CalendarDays, CheckSquare, CircleUser, ClipboardList, History, Wallet } from 'lucide-react'
+import { BarChart3, CalendarDays, CheckSquare, CircleUser, ClipboardList, GraduationCap, History, Wallet } from 'lucide-react'
 import { ApiError, api, setToken } from '../lib/api'
 import { date, dateShort, dayMonth, money, plural, time } from '../lib/format'
 import { Avatar, Badge, Spinner, attendanceStatus, cx, type Tone } from '../components/ui'
 import AttendanceMark from '../pages/AttendanceMark'
+import { gradeStyle, num, useTeacherTestConfig } from '../lib/tests'
+import { TeacherTestsTab, TestEntry } from './TeacherTests'
 import { hasPortalToken, loadTelegram, portal, setPortalToken, type Lesson, type Overview, type PortalMe, type TeacherCabinet } from './portal'
 
 type Session = { kind: 'student' | 'parent' | 'staff' }
@@ -58,6 +60,7 @@ export default function MiniApp() {
   return (
     <Routes>
       <Route path="lesson/:lessonId" element={<AttendanceMark />} />
+      {session.kind === 'staff' && <Route path="test/:groupId" element={<TestEntry />} />}
       <Route path="*" element={session.kind === 'staff' ? <TeacherHome /> : <PortalHome onLogout={logout} />} />
     </Routes>
   )
@@ -197,7 +200,7 @@ function Schedule({ lessons, onOpen, showTeacher, empty }: { lessons: Lesson[]; 
 function PortalHome({ onLogout }: { onLogout: () => void }) {
   const me = useQuery({ queryKey: ['portal-me'], queryFn: () => portal<PortalMe>('GET', '/portal/me') })
   const [child, setChild] = useState('')
-  const [tab, setTab] = useState<'schedule' | 'attendance' | 'payments' | 'profile'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'attendance' | 'tests' | 'payments' | 'profile'>('schedule')
   const childId = child || me.data?.children[0]?.id || ''
   const ov = useQuery({ queryKey: ['portal-overview', childId], queryFn: () => portal<Overview>('GET', '/portal/students/' + childId), enabled: !!childId })
   if (me.isError) return <Center><div>Сессия истекла. <button className="font-semibold text-brand-600" onClick={onLogout}>Войти снова</button></div></Center>
@@ -207,6 +210,7 @@ function PortalHome({ onLogout }: { onLogout: () => void }) {
   const tabs: Tab<typeof tab>[] = [
     { id: 'schedule', label: 'Расписание', icon: <CalendarDays className="size-5" /> },
     { id: 'attendance', label: 'Посещаемость', icon: <CheckSquare className="size-5" /> },
+    ...(o?.tests?.length ? [{ id: 'tests' as const, label: 'Тесты', icon: <GraduationCap className="size-5" /> }] : []),
     { id: 'payments', label: 'Оплата', icon: <Wallet className="size-5" /> },
     { id: 'profile', label: 'Профиль', icon: <CircleUser className="size-5" /> },
   ]
@@ -229,6 +233,7 @@ function PortalHome({ onLogout }: { onLogout: () => void }) {
               </>
             )}
             {tab === 'attendance' && o && <Attendance o={o} />}
+            {tab === 'tests' && o && <Tests o={o} />}
             {tab === 'payments' && o && <Payments o={o} />}
             {tab === 'profile' && <Profile me={m} o={o} onLogout={onLogout} />}
           </>
@@ -267,6 +272,38 @@ function Attendance({ o }: { o: Overview }) {
         )}
       </Section>
     </>
+  )
+}
+
+function Tests({ o }: { o: Overview }) {
+  return (
+    <div className="space-y-2">
+      {o.tests.map((r) => (
+        <Box key={r.id}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold">{r.test_type}</div>
+              <div className="text-[13px] text-muted">{date(r.taken_on)}{r.group && ` · ${r.group}`}</div>
+            </div>
+            <div className="shrink-0 text-right">
+              {r.percent != null && <div className="text-[20px] font-bold tabular">{num(r.percent)}%</div>}
+              {r.grade && <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[12px] font-semibold" style={gradeStyle(r.grade.color)}>{r.grade.name}</span>}
+            </div>
+          </div>
+          {r.scores.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {r.scores.map((s) => (
+                <div key={s.skill_id} className="flex items-center justify-between gap-2 text-[14px]">
+                  <span className="text-muted">{s.skill}</span>
+                  {s.grade ? <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[12px] font-semibold" style={gradeStyle(s.grade.color)}>{s.grade.name}</span> : <span className="tabular"><b>{num(s.score)}</b> / {num(s.max_score)}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {r.comment && <div className="mt-3 rounded-xl bg-gray-50 p-3 text-[14px]">{r.comment}</div>}
+        </Box>
+      ))}
+    </div>
   )
 }
 
@@ -354,8 +391,9 @@ function PasswordForm() {
 function TeacherHome() {
   const nav = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'schedule' | 'mark' | 'history' | 'profile'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'mark' | 'tests' | 'history' | 'profile'>('schedule')
   const q = useQuery({ queryKey: ['teacher-cabinet'], queryFn: () => api.get<TeacherCabinet>('/teacher/cabinet') })
+  const tests = useTeacherTestConfig()
   useEffect(() => { qc.invalidateQueries({ queryKey: ['teacher-cabinet'] }) }, [qc])
   if (q.isError) return <Center><div>{(q.error as Error).message}</div></Center>
   if (!q.data) return <Spinner className="h-full" />
@@ -364,6 +402,7 @@ function TeacherHome() {
   const tabs: Tab<typeof tab>[] = [
     { id: 'schedule', label: 'Расписание', icon: <CalendarDays className="size-5" /> },
     { id: 'mark', label: 'Отметить', icon: <ClipboardList className="size-5" />, badge: to_mark.length },
+    ...(tests.data?.types.length ? [{ id: 'tests' as const, label: 'Тесты', icon: <GraduationCap className="size-5" /> }] : []),
     { id: 'history', label: 'Проведённые', icon: <History className="size-5" /> },
     { id: 'profile', label: 'Профиль', icon: <BarChart3 className="size-5" /> },
   ]
@@ -382,6 +421,7 @@ function TeacherHome() {
       {tab === 'mark' && (to_mark.length === 0 ? <Empty>Все прошедшие занятия отмечены</Empty> : (
         <Section title="Требуют отметки"><div className="space-y-2">{to_mark.map((l) => <LessonCard key={l.id} l={l} onClick={() => open(l)} />)}</div></Section>
       ))}
+      {tab === 'tests' && <TeacherTestsTab />}
       {tab === 'history' && (conducted.length === 0 ? <Empty>Проведённых занятий пока нет</Empty> : (
         <Section title="Последние проведённые">
           <Box className="divide-y divide-line !p-0">

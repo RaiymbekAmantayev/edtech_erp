@@ -63,7 +63,7 @@ var AllPermissions = []string{
 	"leads.view", "leads.edit",
 	"groups.view", "groups.edit",
 	"schedule.view", "schedule.edit",
-	"attendance.view", "attendance.mark", "attendance.edit_closed",
+	"attendance.view", "attendance.mark", "attendance.edit_closed", "tests.conduct",
 	"finance.view", "payments.create", "payments.refund", "subscriptions.edit",
 	"reports.view",
 	"employees.view", "employees.edit",
@@ -96,11 +96,11 @@ var SystemRoles = []SystemRole{
 		"students.view", "students.edit", "students.export", "students.import", "parents.view", "parents.edit",
 		"leads.view", "leads.edit", "groups.view", "groups.edit", "schedule.view", "schedule.edit",
 		"attendance.view", "attendance.mark", "attendance.edit_closed", "finance.view", "payments.create",
-		"subscriptions.edit", "reports.view", "employees.view", "employees.edit", "audit.view"}},
+		"subscriptions.edit", "reports.view", "employees.view", "employees.edit", "audit.view", "tests.conduct"}},
 	{"academic", "Учебный отдел", true, []string{
 		"students.view", "students.edit", "parents.view", "leads.view", "groups.view", "groups.edit",
 		"schedule.view", "schedule.edit", "attendance.view", "attendance.mark", "attendance.edit_closed",
-		"reports.view", "employees.view"}},
+		"reports.view", "employees.view", "tests.conduct"}},
 	{"accountant", "Бухгалтер", true, []string{
 		"students.view", "parents.view", "groups.view", "schedule.view", "attendance.view",
 		"finance.view", "payments.create", "payments.refund", "subscriptions.edit", "reports.view",
@@ -109,5 +109,5 @@ var SystemRoles = []SystemRole{
 	{"sales", "Менеджер продаж", false, []string{
 		"students.view", "parents.view", "parents.edit", "leads.view", "leads.edit", "groups.view",
 		"schedule.view", "payments.create"}},
-	{"teacher", "Преподаватель", false, []string{"attendance.mark"}},
+	{"teacher", "Преподаватель", false, []string{"attendance.mark", "tests.conduct"}},
 }

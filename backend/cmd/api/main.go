@@ -14,6 +14,7 @@ import (
 	"emp/internal/modules/branch"
 	"emp/internal/modules/customfield"
 	"emp/internal/modules/employee"
+	"emp/internal/modules/exam"
 	"emp/internal/modules/finance"
 	"emp/internal/modules/group"
 	"emp/internal/modules/identity"
@@ -101,6 +102,7 @@ func main() {
 				(&finance.Handler{DB: db}).Routes(r)
 				(&lead.Handler{DB: db}).Routes(r)
 				(&reporting.Handler{DB: db}).Routes(r)
+				(&exam.Handler{DB: db}).Routes(r)
 				cabinet.StaffRoutes(r)
 			})
 		})

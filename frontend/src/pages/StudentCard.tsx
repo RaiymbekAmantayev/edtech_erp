@@ -10,6 +10,7 @@ import type { CField, StudentRow, Subscription } from '../lib/types'
 import { Avatar, Badge, Banner, Button, Card, Checkbox, Field, Input, Modal, Select, Spinner, StatusBadge, Tabs, Textarea, Toast, attendanceStatus, cx, paymentMethods, studentStatus } from '../components/ui'
 import { CFInput, cfDisplay, groupByBlock, inScope, useBlocks } from '../components/CustomFields'
 import { Dropdown, MenuItem } from '../components/Layout'
+import { StudentTests } from '../components/Tests'
 import { PaymentModal } from './finance/PaymentModal'
 import { FreezeModal, SubscriptionModal } from './finance/SubscriptionModals'
 
@@ -33,7 +34,7 @@ export default function StudentCard() {
   const { id } = useParams()
   const { can } = useAuth()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'overview' | 'attendance' | 'finance' | 'documents' | 'history'>('overview')
+  const [tab, setTab] = useState<'overview' | 'attendance' | 'tests' | 'finance' | 'documents' | 'history'>('overview')
   const [modal, setModal] = useState<null | 'edit' | { block: string | null } | 'payment' | 'subscription' | 'freeze' | 'parent' | 'adjust' | 'status'>(null)
   const [menu, setMenu] = useState(false)
   const [toast, setToast] = useState('')
@@ -131,7 +132,7 @@ export default function StudentCard() {
       </div>
 
       <Tabs className="mt-6" value={tab} onChange={setTab} items={[
-        { value: 'overview', label: 'Обзор' }, { value: 'attendance', label: 'Посещаемость' },
+        { value: 'overview', label: 'Обзор' }, { value: 'attendance', label: 'Посещаемость' }, { value: 'tests', label: 'Тесты' },
         ...(can('finance.view') ? [{ value: 'finance' as const, label: 'Финансы' }] : []),
         { value: 'documents', label: 'Документы' }, { value: 'history', label: 'История' },
       ]} />
@@ -236,6 +237,7 @@ export default function StudentCard() {
       )}
 
       {tab === 'attendance' && <AttendanceTab id={id!} />}
+      {tab === 'tests' && <StudentTests studentId={id!} groups={c.groups} />}
       {tab === 'finance' && <FinanceTab id={id!} subs={c.subscriptions ?? []} onChange={refresh} />}
       {tab === 'documents' && <Card className="mt-6"><div className="py-10 text-center text-sm text-muted">Генерация договоров и квитанций по шаблонам с подстановкой полей (включая пользовательские) — этап 6 roadmap.</div></Card>}
       {tab === 'history' && (

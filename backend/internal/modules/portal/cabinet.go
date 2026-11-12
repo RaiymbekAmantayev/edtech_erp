@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"emp/internal/modules/exam"
 	"emp/internal/platform/httpx"
 
 	"github.com/go-chi/chi/v5"
@@ -171,6 +172,10 @@ func (h *Handler) studentOverview(w http.ResponseWriter, r *http.Request) error 
 				}
 				return m, err
 			})
+		if err != nil {
+			return err
+		}
+		out["tests"], err = exam.LoadResults(ctx, tx, "st.student_id = $1", []any{id}, 30)
 		return err
 	})
 	if err != nil {

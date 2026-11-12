@@ -1,5 +1,6 @@
 // Клиент кабинета ученика/родителя: свой токен (issuer emp-portal), хранится в sessionStorage вкладки Mini App.
 import { ApiError } from '../lib/api'
+import type { TestResult } from '../lib/tests'
 
 const KEY = 'emp.portal'
 let token: string | null = (() => { try { return sessionStorage.getItem(KEY) } catch { return null } })()
@@ -64,6 +65,7 @@ export type Overview = {
   upcoming: Lesson[]
   attendance: { starts_at: string; group: string; status: string; topic: string | null }[]
   attendance_90d: Record<string, number>
+  tests: TestResult[]
   subscriptions: { name: string; type: string; lessons_total: number | null; lessons_used: number; lessons_left?: number; starts_on: string; ends_on: string | null; status: string }[]
 }
 export type TeacherCabinet = {

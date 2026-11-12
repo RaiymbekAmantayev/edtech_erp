@@ -3,11 +3,12 @@ import { cx } from '../../components/ui'
 import CustomFields from './CustomFields'
 import { Branches, Calendar, Organization, Plan, Rules } from './General'
 import TelegramBot from './TelegramBot'
+import Testing from './Testing'
 import Users from './Users'
 
 const items = [
   ['organization', 'Организация'], ['branches', 'Филиалы и кабинеты'], ['users', 'Пользователи и роли'], ['fields', 'Пользовательские поля'],
-  ['rules', 'Правила списания'], ['calendar', 'Календарь и праздники'], ['telegram', 'Telegram-бот'], ['plan', 'Тариф и оплата'],
+  ['testing', 'Тестирование'], ['rules', 'Правила списания'], ['calendar', 'Календарь и праздники'], ['telegram', 'Telegram-бот'], ['plan', 'Тариф и оплата'],
 ]
 const soon = [['Статусы и воронки', 'этап 6'], ['Шаблоны документов', 'этап 6'], ['WhatsApp и SMS', 'этап 7']]
 
@@ -30,6 +31,7 @@ export default function Settings() {
           <Route path="branches" element={<Branches />} />
           <Route path="users" element={<Users />} />
           <Route path="fields" element={<CustomFields />} />
+          <Route path="testing" element={<Testing />} />
           <Route path="rules" element={<Rules />} />
           <Route path="calendar" element={<Calendar />} />
           <Route path="telegram" element={<TelegramBot />} />
