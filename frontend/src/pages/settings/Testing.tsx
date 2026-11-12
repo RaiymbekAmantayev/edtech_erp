@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Send } from 'lucide-react'
 import { ApiError, api, errorsByField } from '../../lib/api'
-import { gradeStyle, num, scoringLabel, type TestConfig, type TestGrade, type TestSkill, type TestType } from '../../lib/tests'
+import { gradeStyle, num, scoringLabel, type LessonMode, type TestConfig, type TestGrade, type TestSkill, type TestType } from '../../lib/tests'
+import { CoursePicker, courseNames, useCourses } from '../../components/CoursePicker'
+import { LessonModeSelect } from '../../components/Tests'
 import { Badge, Banner, Button, Card, Checkbox, Empty, Field, Input, Modal, Segmented, Spinner, Tabs, Textarea, Toast, cx } from '../../components/ui'
 
 const palette = ['#16a34a', '#0d9488', '#2563eb', '#7c3aed', '#d97706', '#ea580c', '#dc2626', '#64748b']
@@ -19,7 +20,7 @@ export default function Testing() {
     <div className="max-w-4xl space-y-5">
       <div>
         <h1 className="text-[22px] font-bold">Тестирование</h1>
-        <p className="mt-1 text-sm text-muted">Настройте свои тесты: какие навыки проверяются, сколько баллов за каждый и какая оценка выставляется. Результаты вносят преподаватели — в карточке ученика или в Telegram-кабинете.</p>
+        <p className="mt-1 text-sm text-muted">Настройте свои тесты: какие навыки проверяются, сколько баллов за каждый и какая оценка выставляется. Тесты «на уроке» преподаватель заполняет при отметке посещаемости (в том числе в Telegram), обязательные — без них занятие не закрывается.</p>
       </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <Tabs value={tab} onChange={setTab} className="flex-1" items={[
@@ -52,6 +53,7 @@ function Types({ c, onToast, onSkills }: { c: TestConfig; onToast: (s: string) =
     onSuccess: () => { refresh(); onToast('Сохранено') },
   })
   const activeSkills = c.skills.filter((s) => !s.archived)
+  const courses = useCourses()
   return (
     <>
       <Card title="Типы тестов" bodyClass="!px-0 !pb-0" action={<Button variant="primary" size="sm" disabled={!activeSkills.length} onClick={() => setEdit('new')}>+ Тип теста</Button>}>
@@ -66,11 +68,9 @@ function Types({ c, onToast, onSkills }: { c: TestConfig; onToast: (s: string) =
                     {scoringLabel[t.scoring]} · {t.skills.map((s) => t.scoring === 'score' ? `${s.name} (${num(s.max_score)})` : s.name).join(', ')}
                     {t.results > 0 && ` · результатов: ${t.results}`}
                   </div>
+                  {t.lesson_mode !== 'off' && <div className="mt-0.5 text-[13px] text-muted">Курсы: {courseNames(t.course_ids, courses.data)}</div>}
                 </div>
-                <div className="flex items-center gap-1.5 text-[13px]" title="Показывать преподавателю в Telegram Mini App">
-                  <Send className="size-3.5 text-sky-600" />
-                  <Checkbox checked={t.show_in_miniapp} disabled={t.archived} onChange={(v) => patch.mutate({ id: t.id, body: { show_in_miniapp: v } })} label="В Mini App" />
-                </div>
+                <LessonModeSelect value={t.lesson_mode} disabled={t.archived} onChange={(v) => patch.mutate({ id: t.id, body: { lesson_mode: v } })} />
                 <div className="flex gap-1">
                   {!t.archived && <Button size="sm" variant="ghost" onClick={() => setEdit(t)}>Изменить</Button>}
                   <Button size="sm" variant="ghost" onClick={() => patch.mutate({ id: t.id, body: { archived: !t.archived } })}>{t.archived ? 'Восстановить' : 'В архив'}</Button>
@@ -89,13 +89,14 @@ function TypeModal({ type, skills, onClose, onSaved }: { type: TestType | null; 
   const [name, setName] = useState(type?.name ?? '')
   const [description, setDescription] = useState(type?.description ?? '')
   const [scoring, setScoring] = useState<'score' | 'grade'>(type?.scoring ?? 'score')
-  const [show, setShow] = useState(type?.show_in_miniapp ?? true)
+  const [mode, setMode] = useState<LessonMode>(type?.lesson_mode ?? 'optional')
+  const [courses, setCourses] = useState<string[]>(type?.course_ids ?? [])
   // выбранные навыки в порядке добавления: skill_id → максимальный балл
   const [sel, setSel] = useState<{ skill_id: string; max: string }[]>(type?.skills.map((s) => ({ skill_id: s.skill_id, max: String(s.max_score) })) ?? [])
   const [error, setError] = useState('')
   const save = useMutation({
     mutationFn: () => {
-      const body = { name, description, scoring, show_in_miniapp: show, skills: sel.map((s) => ({ skill_id: s.skill_id, max_score: scoring === 'score' ? Number(s.max.replace(',', '.')) : 1 })) }
+      const body = { name, description, scoring, lesson_mode: mode, course_ids: courses, skills: sel.map((s) => ({ skill_id: s.skill_id, max_score: scoring === 'score' ? Number(s.max.replace(',', '.')) : 1 })) }
       return type ? api.patch(`/test-types/${type.id}`, body) : api.post('/test-types', body)
     },
     onSuccess: onSaved,
@@ -136,7 +137,10 @@ function TypeModal({ type, skills, onClose, onSaved }: { type: TestType | null; 
             })}
           </div>
         </div>
-        <div className="rounded-lg bg-sky-50 p-3"><Checkbox checked={show} onChange={setShow} label="Показывать преподавателям в Telegram Mini App" /></div>
+        <Field label="На уроке" hint={mode === 'off' ? 'Результат вносится только вручную в карточке ученика.' : mode === 'required' ? 'Преподаватель не закроет занятие, пока не заполнит тест у всех пришедших учеников.' : 'Поля теста есть при отметке посещаемости, заполнять не обязательно.'}>
+          <Segmented value={mode} onChange={setMode} items={[{ value: 'off', label: 'Не на уроке' }, { value: 'optional', label: 'Необязательный' }, { value: 'required', label: 'Обязательный' }]} />
+        </Field>
+        {mode !== 'off' && <Field label="Для каких курсов"><CoursePicker value={courses} onChange={setCourses} /></Field>}
         {error && <div className="text-sm text-red-700">{error}</div>}
       </div>
     </Modal>

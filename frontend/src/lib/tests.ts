@@ -1,15 +1,14 @@
 // Модуль «Тестирование»: типы тестов, навыки, оценки и результаты.
-import { useQuery } from '@tanstack/react-query'
-import { api } from './api'
-
 export type TestSkill = { id: string; name: string; archived: boolean }
 export type TestGrade = { id: string; name: string; color: string | null; min_percent: number | null; archived: boolean }
+export type LessonMode = 'off' | 'optional' | 'required'
 export type TestType = {
   id: string
   name: string
   description: string | null
   scoring: 'score' | 'grade'
-  show_in_miniapp: boolean
+  lesson_mode: LessonMode
+  course_ids: string[]
   archived: boolean
   skills: { skill_id: string; name: string; max_score: number }[]
   results: number
@@ -25,6 +24,7 @@ export type TestResult = {
   test_type: string
   scoring: 'score' | 'grade'
   group: string | null
+  lesson_id: string | null
   teacher: string | null
   total_score: number | null
   max_score: number | null
@@ -37,6 +37,7 @@ export type TestResult = {
 }
 
 export const scoringLabel = { score: 'Баллы по навыкам', grade: 'Оценка по навыкам' }
+export const lessonModeLabel: Record<LessonMode, string> = { off: 'Не на уроке', optional: 'На уроке, необязательный', required: 'На уроке, обязательный' }
 
 export const num = (n: number | null | undefined) => (n == null ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','))
 
@@ -61,5 +62,3 @@ export function summarize(type: TestType, scores: Record<string, string>) {
 
 export const gradeStyle = (c: string | null | undefined) => (c ? { backgroundColor: c + '22', color: c } : undefined)
 
-// Типы тестов, открытые преподавателю в Telegram Mini App.
-export const useTeacherTestConfig = () => useQuery({ queryKey: ['tests-config', 'miniapp'], queryFn: () => api.get<TestConfig>('/tests/config?miniapp=1') })

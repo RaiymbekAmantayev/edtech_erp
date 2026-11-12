@@ -111,7 +111,7 @@ func (h *Handler) teacherCabinet(w http.ResponseWriter, r *http.Request) error {
 
 // ---------------------------------------------------------------- бот школы
 
-var notifyTypes = []string{"attendance", "lessons", "subscription", "payment"}
+var notifyTypes = []string{"attendance", "lessons", "homework", "subscription", "payment"}
 
 func (h *Handler) getBot(w http.ResponseWriter, r *http.Request) error {
 	p := auth.FromContext(r.Context())

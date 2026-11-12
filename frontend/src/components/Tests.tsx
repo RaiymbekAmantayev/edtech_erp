@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { date, isoDay } from '../lib/format'
-import { autoGrade, gradeStyle, num, summarize, type GradeRef, type TestConfig, type TestResult } from '../lib/tests'
+import { autoGrade, gradeStyle, lessonModeLabel, num, summarize, type GradeRef, type LessonMode, type TestConfig, type TestResult } from '../lib/tests'
 import { Button, Card, Empty, Field, Input, Modal, Select, Spinner, Textarea, cx } from './ui'
 
 export const GradeChip = ({ g, className }: { g: GradeRef | null | undefined; className?: string }) =>
@@ -141,5 +141,15 @@ function ResultModal({ studentId, groups, onClose, onSaved }: { studentId: strin
         </div>
       )}
     </Modal>
+  )
+}
+
+export function LessonModeSelect({ value, onChange, disabled }: { value: LessonMode; onChange: (v: LessonMode) => void; disabled?: boolean }) {
+  return (
+    <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as LessonMode)}
+      className={cx('h-8 rounded-lg border px-2 text-[13px] font-medium disabled:opacity-60',
+        value === 'required' ? 'border-red-200 bg-red-50 text-red-800' : value === 'optional' ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-line bg-white text-muted')}>
+      {(Object.keys(lessonModeLabel) as LessonMode[]).map((m) => <option key={m} value={m}>{lessonModeLabel[m]}</option>)}
+    </select>
   )
 }

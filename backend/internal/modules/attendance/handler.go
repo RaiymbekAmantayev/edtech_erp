@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"emp/internal/modules/customfield"
+	"emp/internal/modules/exam"
 	"emp/internal/modules/finance"
+	"emp/internal/modules/ktp"
 	"emp/internal/platform/auth"
 	"emp/internal/platform/database"
 	"emp/internal/platform/httpx"
@@ -57,13 +59,14 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	out := map[string]any{}
 	err := h.DB.Tx(ctx, func(tx pgx.Tx) error {
-		var groupID, branchID, status, groupName, tz string
-		var teacherID, room, topic *string
+		var groupID, branchID, status, groupName, tz, courseID string
+		var teacherID, room, topic, homework, ktpTopicID *string
 		var starts, ends time.Time
 		var closedAt *time.Time
-		if err := tx.QueryRow(ctx, `SELECT l.group_id, l.branch_id, l.teacher_id::text, l.status, g.name, b.timezone, cl.name, l.topic, l.starts_at, l.ends_at, l.closed_at
+		if err := tx.QueryRow(ctx, `SELECT l.group_id, l.branch_id, l.teacher_id::text, l.status, g.name, b.timezone, cl.name, l.topic, l.starts_at, l.ends_at, l.closed_at,
+				g.course_id::text, l.homework, l.ktp_topic_id::text
 			FROM lessons l JOIN groups g ON g.id=l.group_id JOIN branches b ON b.id=l.branch_id LEFT JOIN classrooms cl ON cl.id=l.classroom_id WHERE l.id=$1`, id).
-			Scan(&groupID, &branchID, &teacherID, &status, &groupName, &tz, &room, &topic, &starts, &ends, &closedAt); err != nil {
+			Scan(&groupID, &branchID, &teacherID, &status, &groupName, &tz, &room, &topic, &starts, &ends, &closedAt, &courseID, &homework, &ktpTopicID); err != nil {
 			return err
 		}
 		if !canAccess(p, teacherID, branchID) {
@@ -107,8 +110,20 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) error {
 		tx.QueryRow(ctx, `SELECT coalesce((settings->>'edit_closed_hours')::int, 24) FROM tenants WHERE id = app_current_tenant()`).Scan(&editHours)
 		editable := status != "done" || p.Can("attendance.edit_closed") || (closedAt != nil && time.Since(*closedAt) < time.Duration(editHours)*time.Hour)
 		out = map[string]any{"lesson": map[string]any{"id": id, "group_id": groupID, "group_name": groupName, "status": status, "classroom": room, "topic": topic,
-			"starts_at": starts, "ends_at": ends, "closed_at": closedAt, "timezone": tz},
+			"homework": homework, "ktp_topic_id": ktpTopicID, "starts_at": starts, "ends_at": ends, "closed_at": closedAt, "timezone": tz},
 			"roster": roster, "editable": editable, "requires_reason": status == "done" && closedAt != nil && time.Since(*closedAt) >= time.Duration(editHours)*time.Hour}
+		// КТП: темы с ДЗ для выбора и следующая непройденная тема
+		cats, suggested, err := ktp.ForLesson(ctx, tx, groupID, courseID)
+		if err != nil {
+			return err
+		}
+		out["ktp"] = map[string]any{"categories": cats, "suggested_topic_id": suggested}
+		// тесты за урок (обязательные и необязательные) и уже введённые баллы
+		tests, grades, results, err := exam.ForLesson(ctx, tx, id, courseID)
+		if err != nil {
+			return err
+		}
+		out["tests"], out["grades"], out["results"] = tests, grades, results
 		return nil
 	})
 	if err != nil {
@@ -167,9 +182,12 @@ type saveReq struct {
 		Reason    string `json:"reason"`
 		Comment   string `json:"comment"`
 	} `json:"items"`
-	Topic        *string `json:"topic"`
-	Close        bool    `json:"close"`
-	ChangeReason string  `json:"change_reason"`
+	Topic        *string            `json:"topic"`
+	Homework     *string            `json:"homework"`
+	KtpTopicID   *string            `json:"ktp_topic_id"`
+	Tests        []exam.LessonEntry `json:"tests"`
+	Close        bool               `json:"close"`
+	ChangeReason string             `json:"change_reason"`
 }
 
 func (h *Handler) save(w http.ResponseWriter, r *http.Request) error {
@@ -182,12 +200,13 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	result := map[string]any{}
 	err := h.DB.Tx(ctx, func(tx pgx.Tx) error {
-		var branchID, status string
+		var branchID, status, groupID, courseID, tz string
 		var teacherID *string
 		var closedAt *time.Time
 		var starts time.Time
-		if err := tx.QueryRow(ctx, `SELECT branch_id, teacher_id::text, status, closed_at, starts_at FROM lessons WHERE id=$1 FOR UPDATE`, id).
-			Scan(&branchID, &teacherID, &status, &closedAt, &starts); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT l.branch_id, l.teacher_id::text, l.status, l.closed_at, l.starts_at, l.group_id::text, g.course_id::text, b.timezone
+			FROM lessons l JOIN groups g ON g.id=l.group_id JOIN branches b ON b.id=l.branch_id WHERE l.id=$1 FOR UPDATE OF l`, id).
+			Scan(&branchID, &teacherID, &status, &closedAt, &starts, &groupID, &courseID, &tz); err != nil {
 			return err
 		}
 		if !canAccess(p, teacherID, branchID) {
@@ -270,6 +289,39 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request) error {
 		if req.Topic != nil {
 			tx.Exec(ctx, `UPDATE lessons SET topic=NULLIF($2,'') WHERE id=$1`, id, strings.TrimSpace(*req.Topic))
 		}
+		if req.Homework != nil {
+			if len([]rune(*req.Homework)) > 5000 {
+				return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "homework", Code: "TOO_LONG"}}}).Err()
+			}
+			tx.Exec(ctx, `UPDATE lessons SET homework=NULLIF($2,'') WHERE id=$1`, id, strings.TrimSpace(*req.Homework))
+		}
+		if req.KtpTopicID != nil {
+			if _, err := tx.Exec(ctx, `UPDATE lessons SET ktp_topic_id=NULLIF($2,'')::uuid WHERE id=$1`, id, *req.KtpTopicID); err != nil {
+				return err
+			}
+		}
+		// баллы за тесты урока — только у пришедших; при закрытии проверяются обязательные тесты
+		if req.Tests != nil {
+			present := map[string]bool{}
+			rows, err := tx.Query(ctx, `SELECT student_id::text FROM attendance WHERE lesson_id=$1 AND student_id IS NOT NULL AND status IN ('present','late','trial')`, id)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var sid string
+				rows.Scan(&sid)
+				present[sid] = true
+			}
+			rows.Close()
+			loc, _ := time.LoadLocation(tz)
+			if loc == nil {
+				loc = time.UTC
+			}
+			if err := exam.SaveLesson(ctx, tx, id, groupID, courseID, starts.In(loc).Format("2006-01-02"), teacherID, p.UserID,
+				req.Tests, present, req.Close && status != "done"); err != nil {
+				return err
+			}
+		}
 		if req.Close && status != "done" {
 			// закрытие занятия — триггер списаний, начисления зарплаты и уведомлений (ТЗ 12.5)
 			if _, err := tx.Exec(ctx, `UPDATE lessons SET status='done', closed_at=NOW(), closed_by=$2 WHERE id=$1`, id, p.UserID); err != nil {
@@ -277,6 +329,18 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request) error {
 			}
 			status = "done"
 			database.Publish(ctx, tx, "lesson.closed", map[string]any{"lesson_id": id})
+			// родителям — итог урока: тема, ДЗ и результаты ребёнка
+			rows, err := tx.Query(ctx, `SELECT DISTINCT student_id::text FROM attendance WHERE lesson_id=$1 AND student_id IS NOT NULL`, id)
+			if err != nil {
+				return err
+			}
+			students, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			if err != nil {
+				return err
+			}
+			for _, sid := range students {
+				database.Publish(ctx, tx, "lesson.report", map[string]any{"lesson_id": id, "student_id": sid})
+			}
 		}
 		if status == "done" {
 			charged, err := ApplyCharges(ctx, tx, id, p.UserID)

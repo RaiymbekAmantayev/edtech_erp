@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 import { ApiError, api } from '../../lib/api'
 import { dateTime, plural } from '../../lib/format'
-import type { TestConfig } from '../../lib/tests'
+import type { LessonMode, TestConfig } from '../../lib/tests'
+import { LessonModeSelect } from '../../components/Tests'
 import { Badge, Banner, Button, Card, Checkbox, Field, Input, Spinner, Stat, Textarea, Toast } from '../../components/ui'
 
 type Bot = {
@@ -23,6 +24,7 @@ type Bot = {
 const notifyLabels: Record<string, string> = {
   attendance: 'Пропуск и опоздание ученика',
   lessons: 'Отмена и перенос занятия',
+  homework: 'Итог урока: тема, ДЗ и результаты тестов',
   subscription: 'Абонемент заканчивается',
   payment: 'Оплата получена',
 }
@@ -126,26 +128,28 @@ export default function TelegramBot() {
   )
 }
 
-// Какие тесты преподаватель видит и может проводить в Telegram Mini App.
+// Какие тесты преподаватель заполняет при отметке урока в Telegram Mini App и какие из них обязательные.
 function MiniAppTests({ onSaved }: { onSaved: () => void }) {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['tests-config', 'admin', false], queryFn: () => api.get<TestConfig>('/tests/config') })
   const m = useMutation({
-    mutationFn: ({ id, show }: { id: string; show: boolean }) => api.patch(`/test-types/${id}`, { show_in_miniapp: show }),
+    mutationFn: ({ id, mode }: { id: string; mode: LessonMode }) => api.patch(`/test-types/${id}`, { lesson_mode: mode }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tests-config'] }); onSaved() },
   })
   const types = q.data?.types.filter((t) => !t.archived) ?? []
   return (
-    <Card title="Тесты в кабинете преподавателя" action={<Link to="/settings/testing" className="text-sm text-brand-600">Настроить тесты</Link>}>
+    <Card title="Тесты на уроке" action={<Link to="/settings/testing" className="text-sm text-brand-600">Настроить тесты</Link>}>
       {!q.data ? <Spinner /> : types.length === 0 ? (
         <p className="text-sm text-muted">Типы тестов ещё не созданы. Добавьте их в разделе «Тестирование» — затем здесь можно выбрать, какие из них преподаватели проводят из Telegram.</p>
       ) : (
         <>
-          <p className="mb-3 text-sm text-muted">Отмеченные тесты преподаватель видит во вкладке «Тесты» Mini App и может внести результаты своих групп. Остальные доступны только в веб-версии.</p>
+          <p className="mb-3 text-sm text-muted">Тесты «на уроке» преподаватель заполняет на экране отметки посещаемости в Mini App. Без обязательных занятие не закроется. Результаты приходят родителям вместе с темой и ДЗ.</p>
           <div className="space-y-3">
             {types.map((t) => (
-              <Checkbox key={t.id} checked={t.show_in_miniapp} disabled={m.isPending} onChange={(v) => m.mutate({ id: t.id, show: v })}
-                label={<span>{t.name} <span className="text-muted">· {t.skills.length} {plural(t.skills.length, 'навык', 'навыка', 'навыков')}</span></span>} />
+              <div key={t.id} className="flex items-center justify-between gap-3 text-sm">
+                <span>{t.name} <span className="text-muted">· {t.skills.length} {plural(t.skills.length, 'навык', 'навыка', 'навыков')}</span></span>
+                <LessonModeSelect value={t.lesson_mode} disabled={m.isPending} onChange={(v) => m.mutate({ id: t.id, mode: v })} />
+              </div>
             ))}
           </div>
         </>

@@ -63,7 +63,7 @@ export type Overview = {
   balance_tiyn: number
   groups: { id: string; name: string; course: string; teacher: string | null }[]
   upcoming: Lesson[]
-  attendance: { starts_at: string; group: string; status: string; topic: string | null }[]
+  attendance: { lesson_id: string; starts_at: string; group: string; status: string; topic: string | null; homework: string | null; teacher: string | null }[]
   attendance_90d: Record<string, number>
   tests: TestResult[]
   subscriptions: { name: string; type: string; lessons_total: number | null; lessons_used: number; lessons_left?: number; starts_on: string; ends_on: string | null; status: string }[]

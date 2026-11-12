@@ -128,15 +128,15 @@ func (h *Handler) studentOverview(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 
-		out["attendance"], err = collect(ctx, tx, `SELECT l.starts_at, g.name, a.status, l.topic
-			FROM attendance a JOIN lessons l ON l.id=a.lesson_id JOIN groups g ON g.id=l.group_id
+		out["attendance"], err = collect(ctx, tx, `SELECT l.id::text, l.starts_at, g.name, a.status, l.topic, l.homework, e.full_name
+			FROM attendance a JOIN lessons l ON l.id=a.lesson_id JOIN groups g ON g.id=l.group_id LEFT JOIN employees e ON e.id=l.teacher_id
 			WHERE a.student_id=$1 ORDER BY l.starts_at DESC LIMIT 30`,
 			[]any{id}, func(rows pgx.Rows) (map[string]any, error) {
+				var lid, group, status string
 				var at time.Time
-				var group, status string
-				var topic *string
-				err := rows.Scan(&at, &group, &status, &topic)
-				return map[string]any{"starts_at": at, "group": group, "status": status, "topic": topic}, err
+				var topic, homework, teacher *string
+				err := rows.Scan(&lid, &at, &group, &status, &topic, &homework, &teacher)
+				return map[string]any{"lesson_id": lid, "starts_at": at, "group": group, "status": status, "topic": topic, "homework": homework, "teacher": teacher}, err
 			})
 		if err != nil {
 			return err

@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,8 +36,6 @@ func (h *Handler) Routes(r chi.Router) {
 	r.With(mw.Perm("students.view", "tests.conduct")).Get("/tests", httpx.Handler(h.list).ServeHTTP)
 	r.Group(func(r chi.Router) {
 		r.Use(mw.Perm("tests.conduct"))
-		r.Get("/tests/groups", httpx.Handler(h.groups).ServeHTTP)
-		r.Get("/tests/roster", httpx.Handler(h.roster).ServeHTTP)
 		r.Post("/tests", httpx.Handler(h.create).ServeHTTP)
 		r.Delete("/tests/{id}", httpx.Handler(h.remove).ServeHTTP)
 	})
@@ -68,14 +67,15 @@ type TypeSkill struct {
 }
 
 type Type struct {
-	ID            string      `json:"id"`
-	Name          string      `json:"name"`
-	Description   *string     `json:"description"`
-	Scoring       string      `json:"scoring"`
-	ShowInMiniApp bool        `json:"show_in_miniapp"`
-	Archived      bool        `json:"archived"`
-	Skills        []TypeSkill `json:"skills"`
-	Results       int         `json:"results"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description *string     `json:"description"`
+	Scoring     string      `json:"scoring"`
+	LessonMode  string      `json:"lesson_mode"`
+	CourseIDs   []string    `json:"course_ids"`
+	Archived    bool        `json:"archived"`
+	Skills      []TypeSkill `json:"skills"`
+	Results     int         `json:"results"`
 }
 
 type Config struct {
@@ -84,8 +84,8 @@ type Config struct {
 	Grades []Grade `json:"grades"`
 }
 
-// LoadConfig читает настройки тестирования школы. miniapp — только типы, разрешённые в кабинете преподавателя.
-func LoadConfig(ctx context.Context, tx pgx.Tx, archived, miniapp bool) (Config, error) {
+// LoadConfig читает настройки тестирования школы. lessonOnly — только тесты, которые вводятся на уроке.
+func LoadConfig(ctx context.Context, tx pgx.Tx, archived, lessonOnly bool) (Config, error) {
 	c := Config{Types: []Type{}, Skills: []Skill{}, Grades: []Grade{}}
 	rows, err := tx.Query(ctx, `SELECT id, name, archived_at IS NOT NULL FROM test_skills WHERE ($1 OR archived_at IS NULL) ORDER BY archived_at NULLS FIRST, sort_order, name`, archived)
 	if err != nil {
@@ -112,17 +112,17 @@ func LoadConfig(ctx context.Context, tx pgx.Tx, archived, miniapp bool) (Config,
 		c.Grades = append(c.Grades, g)
 	}
 	rows.Close()
-	rows, err = tx.Query(ctx, `SELECT t.id, t.name, t.description, t.scoring, t.show_in_miniapp, t.archived_at IS NOT NULL,
+	rows, err = tx.Query(ctx, `SELECT t.id, t.name, t.description, t.scoring, t.lesson_mode, t.course_ids::text[], t.archived_at IS NOT NULL,
 			(SELECT count(*) FROM student_tests st WHERE st.test_type_id=t.id)
-		FROM test_types t WHERE ($1 OR t.archived_at IS NULL) AND (NOT $2 OR t.show_in_miniapp)
-		ORDER BY t.archived_at NULLS FIRST, t.sort_order, t.name`, archived, miniapp)
+		FROM test_types t WHERE ($1 OR t.archived_at IS NULL) AND (NOT $2 OR t.lesson_mode <> 'off')
+		ORDER BY t.archived_at NULLS FIRST, t.sort_order, t.name`, archived, lessonOnly)
 	if err != nil {
 		return c, err
 	}
 	idx := map[string]int{}
 	for rows.Next() {
 		t := Type{Skills: []TypeSkill{}}
-		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.Scoring, &t.ShowInMiniApp, &t.Archived, &t.Results); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.Scoring, &t.LessonMode, &t.CourseIDs, &t.Archived, &t.Results); err != nil {
 			return c, err
 		}
 		idx[t.ID] = len(c.Types)
@@ -151,11 +151,11 @@ func LoadConfig(ctx context.Context, tx pgx.Tx, archived, miniapp bool) (Config,
 func (h *Handler) config(w http.ResponseWriter, r *http.Request) error {
 	p := auth.FromContext(r.Context())
 	manage := p.Can("settings.manage")
-	// преподаватель без доступа к карточкам учеников видит только типы, открытые для Mini App
-	miniapp := r.URL.Query().Get("miniapp") == "1" || (!manage && !isStaff(p))
+	// преподаватель без доступа к карточкам учеников видит только тесты, которые вводятся на уроке
+	lessonOnly := r.URL.Query().Get("lesson") == "1" || (!manage && !isStaff(p))
 	var c Config
 	err := h.DB.Tx(r.Context(), func(tx pgx.Tx) (err error) {
-		c, err = LoadConfig(r.Context(), tx, manage && r.URL.Query().Get("archived") == "1", miniapp)
+		c, err = LoadConfig(r.Context(), tx, manage && r.URL.Query().Get("archived") == "1", lessonOnly)
 		return err
 	})
 	if err != nil {
@@ -304,16 +304,19 @@ func (h *Handler) updateGrade(w http.ResponseWriter, r *http.Request) error {
 }
 
 type typeReq struct {
-	Name          *string `json:"name"`
-	Description   *string `json:"description"`
-	Scoring       *string `json:"scoring"`
-	ShowInMiniApp *bool   `json:"show_in_miniapp"`
-	Archived      *bool   `json:"archived"`
-	Skills        *[]struct {
+	Name        *string   `json:"name"`
+	Description *string   `json:"description"`
+	Scoring     *string   `json:"scoring"`
+	LessonMode  *string   `json:"lesson_mode"`
+	CourseIDs   *[]string `json:"course_ids"`
+	Archived    *bool     `json:"archived"`
+	Skills      *[]struct {
 		SkillID  string  `json:"skill_id"`
 		MaxScore float64 `json:"max_score"`
 	} `json:"skills"`
 }
+
+var lessonModes = []string{"off", "optional", "required"}
 
 func (t typeReq) validate(create bool) error {
 	v := &httpx.Validation{}
@@ -326,6 +329,9 @@ func (t typeReq) validate(create bool) error {
 	}
 	if t.Scoring != nil && *t.Scoring != "score" && *t.Scoring != "grade" {
 		v.Add("scoring", "INVALID")
+	}
+	if t.LessonMode != nil && !slices.Contains(lessonModes, *t.LessonMode) {
+		v.Add("lesson_mode", "INVALID")
 	}
 	if create && (t.Skills == nil || len(*t.Skills) == 0) {
 		v.Add("skills", "REQUIRED")
@@ -371,6 +377,21 @@ func (t typeReq) saveSkills(ctx context.Context, tx pgx.Tx, id string) error {
 	return nil
 }
 
+// CheckCourses — курсы должны существовать в школе (RLS скрывает чужие).
+func CheckCourses(ctx context.Context, tx pgx.Tx, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(DISTINCT id) FROM courses WHERE id = ANY($1::uuid[])`, ids).Scan(&n); err != nil {
+		return err
+	}
+	if n != len(ids) {
+		return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "course_ids", Code: "INVALID_OPTION"}}}).Err()
+	}
+	return nil
+}
+
 func (h *Handler) createType(w http.ResponseWriter, r *http.Request) error {
 	var req typeReq
 	if err := httpx.Decode(r, &req); err != nil {
@@ -379,17 +400,25 @@ func (h *Handler) createType(w http.ResponseWriter, r *http.Request) error {
 	if err := req.validate(true); err != nil {
 		return err
 	}
-	scoring := "score"
+	scoring, mode, courses := "score", "optional", []string{}
 	if req.Scoring != nil {
 		scoring = *req.Scoring
 	}
-	show := req.ShowInMiniApp == nil || *req.ShowInMiniApp
+	if req.LessonMode != nil {
+		mode = *req.LessonMode
+	}
+	if req.CourseIDs != nil {
+		courses = *req.CourseIDs
+	}
 	ctx := r.Context()
 	var id string
 	err := h.DB.Tx(ctx, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO test_types (tenant_id, name, description, scoring, show_in_miniapp, sort_order)
-			VALUES (app_current_tenant(), $1, NULLIF(trim($2),''), $3, $4, (SELECT coalesce(max(sort_order),0)+1 FROM test_types)) RETURNING id`,
-			strings.TrimSpace(*req.Name), req.Description, scoring, show).Scan(&id); err != nil {
+		if err := CheckCourses(ctx, tx, courses); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO test_types (tenant_id, name, description, scoring, lesson_mode, course_ids, sort_order)
+			VALUES (app_current_tenant(), $1, NULLIF(trim($2),''), $3, $4, $5::uuid[], (SELECT coalesce(max(sort_order),0)+1 FROM test_types)) RETURNING id`,
+			strings.TrimSpace(*req.Name), req.Description, scoring, mode, courses).Scan(&id); err != nil {
 			return err
 		}
 		if err := req.saveSkills(ctx, tx, id); err != nil {
@@ -426,11 +455,21 @@ func (h *Handler) updateType(w http.ResponseWriter, r *http.Request) error {
 		if req.Scoring != nil && *req.Scoring != scoring && results > 0 {
 			return httpx.Conflict("TEST_SCORING_LOCKED", "Способ оценки нельзя изменить: по этому тесту уже есть результаты")
 		}
+		var courses []string
+		if req.CourseIDs != nil {
+			courses = *req.CourseIDs
+			if courses == nil {
+				courses = []string{}
+			}
+			if err := CheckCourses(ctx, tx, courses); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `UPDATE test_types SET name=coalesce($2, name),
 				description=CASE WHEN $3::text IS NULL THEN description ELSE NULLIF(trim($3),'') END,
-				scoring=coalesce($4, scoring), show_in_miniapp=coalesce($5, show_in_miniapp),
-				archived_at=CASE WHEN $6::bool IS NULL THEN archived_at WHEN $6 THEN coalesce(archived_at, NOW()) END
-			WHERE id=$1`, id, req.Name, req.Description, req.Scoring, req.ShowInMiniApp, req.Archived); err != nil {
+				scoring=coalesce($4, scoring), lesson_mode=coalesce($5, lesson_mode), course_ids=coalesce($6::uuid[], course_ids),
+				archived_at=CASE WHEN $7::bool IS NULL THEN archived_at WHEN $7 THEN coalesce(archived_at, NOW()) END
+			WHERE id=$1`, id, req.Name, req.Description, req.Scoring, req.LessonMode, courses, req.Archived); err != nil {
 			return err
 		}
 		if err := req.saveSkills(ctx, tx, id); err != nil {
@@ -440,86 +479,9 @@ func (h *Handler) updateType(w http.ResponseWriter, r *http.Request) error {
 	})
 }
 
-// ---------------------------------------------------------------- группы и состав для ввода результатов
+// ---------------------------------------------------------------- расчёт результата
 
-func (h *Handler) groups(w http.ResponseWriter, r *http.Request) error {
-	p := auth.FromContext(r.Context())
-	var out []map[string]any
-	err := h.DB.Tx(r.Context(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(r.Context(), `SELECT g.id::text, g.name, c.name, e.full_name,
-				(SELECT count(*) FROM group_students gs WHERE gs.group_id=g.id AND gs.left_at IS NULL)
-			FROM groups g JOIN courses c ON c.id=g.course_id LEFT JOIN employees e ON e.id=g.teacher_id
-			WHERE g.status='active' AND (
-				($1 AND ($2::uuid[] IS NULL OR g.branch_id = ANY($2::uuid[]))) OR (g.teacher_id IS NOT NULL AND g.teacher_id::text = $3))
-			ORDER BY g.name`, isStaff(p), p.BranchFilter(), p.EmployeeID)
-		if err != nil {
-			return err
-		}
-		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (map[string]any, error) {
-			var id, name, course string
-			var teacher *string
-			var students int
-			err := row.Scan(&id, &name, &course, &teacher, &students)
-			return map[string]any{"id": id, "name": name, "course": course, "teacher": teacher, "students": students}, err
-		})
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	return httpx.OK(w, out)
-}
-
-// groupAccess проверяет доступ к группе: администратор — по филиалу, преподаватель — только к своей группе.
-func groupAccess(ctx context.Context, tx pgx.Tx, p *auth.Principal, groupID string) (name string, teacherID *string, err error) {
-	var branchID string
-	if err = tx.QueryRow(ctx, `SELECT name, branch_id::text, teacher_id::text FROM groups WHERE id=$1`, groupID).Scan(&name, &branchID, &teacherID); err != nil {
-		return
-	}
-	if isStaff(p) && p.CanBranch(branchID) {
-		return
-	}
-	if p.EmployeeID != "" && teacherID != nil && *teacherID == p.EmployeeID {
-		return
-	}
-	err = httpx.Forbidden()
-	return
-}
-
-func (h *Handler) roster(w http.ResponseWriter, r *http.Request) error {
-	groupID := r.URL.Query().Get("group_id")
-	if groupID == "" {
-		return httpx.BadRequest("GROUP_REQUIRED", "Выберите группу")
-	}
-	p := auth.FromContext(r.Context())
-	out := map[string]any{}
-	err := h.DB.Tx(r.Context(), func(tx pgx.Tx) error {
-		name, _, err := groupAccess(r.Context(), tx, p, groupID)
-		if err != nil {
-			return err
-		}
-		out["group"] = map[string]any{"id": groupID, "name": name}
-		rows, err := tx.Query(r.Context(), `SELECT s.id::text, s.full_name FROM group_students gs JOIN students s ON s.id=gs.student_id
-			WHERE gs.group_id=$1 AND gs.left_at IS NULL AND s.archived_at IS NULL ORDER BY s.full_name`, groupID)
-		if err != nil {
-			return err
-		}
-		out["students"], err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (map[string]any, error) {
-			var id, name string
-			err := row.Scan(&id, &name)
-			return map[string]any{"id": id, "full_name": name}, err
-		})
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	return httpx.OK(w, out)
-}
-
-// ---------------------------------------------------------------- результаты
-
-type scoreIn struct {
+type ScoreIn struct {
 	SkillID string   `json:"skill_id"`
 	Score   *float64 `json:"score"`
 	GradeID *string  `json:"grade_id"`
@@ -527,13 +489,153 @@ type scoreIn struct {
 
 type itemIn struct {
 	StudentID string    `json:"student_id"`
-	Scores    []scoreIn `json:"scores"`
+	Scores    []ScoreIn `json:"scores"`
 	GradeID   *string   `json:"grade_id"`
 	Comment   *string   `json:"comment"`
 }
 
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
 
+// scorer считает итог по баллам навыков и подбирает оценку по порогам шкалы.
+type scorer struct {
+	scoring string
+	skills  map[string]float64
+	grades  map[string]bool
+	auto    []autoGrade
+}
+
+type autoGrade struct {
+	id  string
+	min float64
+}
+
+type scoreRow struct {
+	skill        string
+	score, maxSc *float64
+	grade        *string
+}
+
+type computed struct {
+	rows                []scoreRow
+	total, max, percent *float64
+	gradeID             *string
+}
+
+func loadScorer(ctx context.Context, tx pgx.Tx, typeID string) (*scorer, error) {
+	s := &scorer{skills: map[string]float64{}, grades: map[string]bool{}}
+	if err := tx.QueryRow(ctx, `SELECT scoring FROM test_types WHERE id=$1`, typeID).Scan(&s.scoring); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `SELECT skill_id::text, max_score::float8 FROM test_type_skills WHERE test_type_id=$1`, typeID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id string
+		var max float64
+		rows.Scan(&id, &max)
+		s.skills[id] = max
+	}
+	rows.Close()
+	rows, err = tx.Query(ctx, `SELECT id::text, min_percent::float8 FROM test_grades WHERE archived_at IS NULL ORDER BY min_percent DESC NULLS LAST`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var min *float64
+		rows.Scan(&id, &min)
+		s.grades[id] = true
+		if min != nil {
+			s.auto = append(s.auto, autoGrade{id, *min})
+		}
+	}
+	return s, rows.Err()
+}
+
+// compute проверяет и считает результат. filled = 0 — ничего не введено; field/code — ошибка ввода.
+func (s *scorer) compute(scores []ScoreIn, gradeID *string) (c computed, filled int, field, code string) {
+	if gradeID != nil && *gradeID == "" {
+		gradeID = nil
+	}
+	if gradeID != nil && !s.grades[*gradeID] {
+		return c, 0, "grade_id", "INVALID_OPTION"
+	}
+	var total, max float64
+	for _, in := range scores {
+		sm, ok := s.skills[in.SkillID]
+		if !ok {
+			return c, 0, "scores", "INVALID_OPTION"
+		}
+		if s.scoring == "score" {
+			if in.Score == nil {
+				continue
+			}
+			if *in.Score < 0 || *in.Score > sm {
+				return c, 0, "scores." + in.SkillID, "TOO_LARGE"
+			}
+			sc, m := round2(*in.Score), sm
+			total += sc
+			max += sm
+			c.rows = append(c.rows, scoreRow{in.SkillID, &sc, &m, nil})
+		} else {
+			if in.GradeID == nil || *in.GradeID == "" {
+				continue
+			}
+			if !s.grades[*in.GradeID] {
+				return c, 0, "scores." + in.SkillID, "INVALID_OPTION"
+			}
+			g := *in.GradeID
+			c.rows = append(c.rows, scoreRow{in.SkillID, nil, nil, &g})
+		}
+		filled++
+	}
+	c.gradeID = gradeID
+	if s.scoring == "score" && max > 0 {
+		t, m, pc := round2(total), max, round2(total/max*100)
+		c.total, c.max, c.percent = &t, &m, &pc
+		if c.gradeID == nil {
+			for _, g := range s.auto {
+				if pc >= g.min {
+					id := g.id
+					c.gradeID = &id
+					break
+				}
+			}
+		}
+	}
+	if gradeID != nil {
+		filled++
+	}
+	return c, filled, "", ""
+}
+
+func insertResult(ctx context.Context, tx pgx.Tx, studentID, typeID string, groupID, lessonID, teacherID *string, takenOn string, c computed, comment *string, userID string) (string, error) {
+	var id string
+	if err := tx.QueryRow(ctx, `INSERT INTO student_tests (tenant_id, student_id, test_type_id, group_id, lesson_id, teacher_id, taken_on, total_score, max_score, percent, grade_id, comment, created_by)
+		VALUES (app_current_tenant(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+		studentID, typeID, groupID, lessonID, teacherID, takenOn, c.total, c.max, c.percent, c.gradeID, comment, userID).Scan(&id); err != nil {
+		return "", err
+	}
+	for _, s := range c.rows {
+		if _, err := tx.Exec(ctx, `INSERT INTO student_test_scores (tenant_id, test_id, skill_id, score, max_score, grade_id) VALUES (app_current_tenant(), $1, $2, $3, $4, $5)`,
+			id, s.skill, s.score, s.maxSc, s.grade); err != nil {
+			return "", err
+		}
+	}
+	return id, nil
+}
+
+func trimPtr(s *string) *string {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	return &t
+}
+
+// create — ввод результата вне урока (карточка ученика). Результаты за урок сохраняются вместе с отметкой посещаемости.
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		TestTypeID string   `json:"test_type_id"`
@@ -543,6 +645,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err := httpx.Decode(r, &req); err != nil {
 		return err
+	}
+	p := auth.FromContext(r.Context())
+	if !isStaff(p) {
+		return httpx.NewError(403, "USE_LESSON_MARKING", "Результаты тестов вносятся при отметке посещаемости занятия")
 	}
 	v := &httpx.Validation{}
 	if req.TestTypeID == "" {
@@ -565,14 +671,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 	if req.GroupID != nil && *req.GroupID == "" {
 		req.GroupID = nil
 	}
-	p := auth.FromContext(r.Context())
 	ctx := r.Context()
 	ids := []string{}
 	err = h.DB.Tx(ctx, func(tx pgx.Tx) error {
-		var scoring string
-		var show, archived bool
-		if err := tx.QueryRow(ctx, `SELECT scoring, show_in_miniapp, archived_at IS NOT NULL FROM test_types WHERE id=$1`, req.TestTypeID).
-			Scan(&scoring, &show, &archived); err != nil {
+		var archived bool
+		if err := tx.QueryRow(ctx, `SELECT archived_at IS NOT NULL FROM test_types WHERE id=$1`, req.TestTypeID).Scan(&archived); err != nil {
 			if err == pgx.ErrNoRows {
 				return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "test_type_id", Code: "INVALID_OPTION"}}}).Err()
 			}
@@ -581,57 +684,23 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 		if archived {
 			return httpx.BadRequest("TEST_TYPE_ARCHIVED", "Тип теста в архиве")
 		}
-		// преподаватель вносит результаты только своей группы и только по тестам, открытым для кабинета
 		var teacherID *string
 		if req.GroupID != nil {
-			_, gTeacher, err := groupAccess(ctx, tx, p, *req.GroupID)
-			if err != nil {
+			var branchID string
+			if err := tx.QueryRow(ctx, `SELECT branch_id::text, teacher_id::text FROM groups WHERE id=$1`, *req.GroupID).Scan(&branchID, &teacherID); err != nil {
 				return err
 			}
-			teacherID = gTeacher
-		} else if !isStaff(p) {
-			return httpx.BadRequest("GROUP_REQUIRED", "Выберите группу")
-		}
-		if !isStaff(p) && !show {
-			return httpx.Forbidden()
+			if !p.CanBranch(branchID) {
+				return httpx.Forbidden()
+			}
 		}
 		if teacherID == nil && p.EmployeeID != "" {
 			teacherID = &p.EmployeeID
 		}
-
-		skills := map[string]float64{}
-		rows, err := tx.Query(ctx, `SELECT skill_id::text, max_score::float8 FROM test_type_skills WHERE test_type_id=$1`, req.TestTypeID)
+		sc, err := loadScorer(ctx, tx, req.TestTypeID)
 		if err != nil {
 			return err
 		}
-		for rows.Next() {
-			var id string
-			var max float64
-			rows.Scan(&id, &max)
-			skills[id] = max
-		}
-		rows.Close()
-		grades := map[string]bool{}
-		type autoGrade struct {
-			id  string
-			min float64
-		}
-		var auto []autoGrade
-		rows, err = tx.Query(ctx, `SELECT id::text, min_percent::float8 FROM test_grades WHERE archived_at IS NULL ORDER BY min_percent DESC NULLS LAST`)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id string
-			var min *float64
-			rows.Scan(&id, &min)
-			grades[id] = true
-			if min != nil {
-				auto = append(auto, autoGrade{id, *min})
-			}
-		}
-		rows.Close()
-
 		for i, it := range req.Items {
 			fe := func(field, code string) error {
 				return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "items." + strconv.Itoa(i) + "." + field, Code: code}}}).Err()
@@ -640,95 +709,21 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 			if err := tx.QueryRow(ctx, `SELECT branch_id::text FROM students WHERE id=$1 AND archived_at IS NULL`, it.StudentID).Scan(&branchID); err != nil {
 				return fe("student_id", "INVALID_OPTION")
 			}
-			if req.GroupID != nil {
-				var inGroup bool
-				tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM group_students WHERE group_id=$1 AND student_id=$2 AND left_at IS NULL)`, *req.GroupID, it.StudentID).Scan(&inGroup)
-				if !inGroup {
-					return fe("student_id", "NOT_IN_GROUP")
-				}
-			} else if !p.CanBranch(branchID) {
+			if !p.CanBranch(branchID) {
 				return httpx.Forbidden()
 			}
-			if it.GradeID != nil && *it.GradeID == "" {
-				it.GradeID = nil
+			c, filled, field, code := sc.compute(it.Scores, it.GradeID)
+			if code != "" {
+				return fe(field, code)
 			}
-			if it.GradeID != nil && !grades[*it.GradeID] {
-				return fe("grade_id", "INVALID_OPTION")
-			}
-			var total, max float64
-			filled := 0
-			type row struct {
-				skill        string
-				score, maxSc *float64
-				grade        *string
-			}
-			var out []row
-			for _, s := range it.Scores {
-				sm, ok := skills[s.SkillID]
-				if !ok {
-					return fe("scores", "INVALID_OPTION")
-				}
-				if s.GradeID != nil && *s.GradeID == "" {
-					s.GradeID = nil
-				}
-				if scoring == "score" {
-					if s.Score == nil {
-						continue
-					}
-					if *s.Score < 0 || *s.Score > sm {
-						return fe("scores."+s.SkillID, "TOO_LARGE")
-					}
-					sc, m := round2(*s.Score), sm
-					total += sc
-					max += sm
-					out = append(out, row{s.SkillID, &sc, &m, nil})
-				} else {
-					if s.GradeID == nil {
-						continue
-					}
-					if !grades[*s.GradeID] {
-						return fe("scores."+s.SkillID, "INVALID_OPTION")
-					}
-					out = append(out, row{s.SkillID, nil, nil, s.GradeID})
-				}
-				filled++
-			}
-			if filled == 0 && it.GradeID == nil {
+			if filled == 0 {
 				return fe("scores", "REQUIRED")
 			}
-			var totalP, maxP, percentP *float64
-			gradeID := it.GradeID
-			if scoring == "score" && max > 0 {
-				t, m, pc := round2(total), max, round2(total/max*100)
-				totalP, maxP, percentP = &t, &m, &pc
-				if gradeID == nil {
-					for _, g := range auto {
-						if pc >= g.min {
-							id := g.id
-							gradeID = &id
-							break
-						}
-					}
-				}
-			}
-			var comment *string
-			if it.Comment != nil && strings.TrimSpace(*it.Comment) != "" {
-				c := strings.TrimSpace(*it.Comment)
-				comment = &c
-			}
-			var id string
-			if err := tx.QueryRow(ctx, `INSERT INTO student_tests (tenant_id, student_id, test_type_id, group_id, teacher_id, taken_on, total_score, max_score, percent, grade_id, comment, created_by)
-				VALUES (app_current_tenant(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-				it.StudentID, req.TestTypeID, req.GroupID, teacherID, req.TakenOn, totalP, maxP, percentP, gradeID, comment, p.UserID).Scan(&id); err != nil {
+			id, err := insertResult(ctx, tx, it.StudentID, req.TestTypeID, req.GroupID, nil, teacherID, req.TakenOn, c, trimPtr(it.Comment), p.UserID)
+			if err != nil {
 				return err
 			}
-			for _, s := range out {
-				if _, err := tx.Exec(ctx, `INSERT INTO student_test_scores (tenant_id, test_id, skill_id, score, max_score, grade_id) VALUES (app_current_tenant(), $1, $2, $3, $4, $5)`,
-					id, s.skill, s.score, s.maxSc, s.grade); err != nil {
-					return err
-				}
-			}
-			if err := database.Audit(ctx, tx, "student", it.StudentID, "test_added", nil, map[string]any{"test_id": id, "test_type_id": req.TestTypeID, "percent": percentP}); err != nil {
+			if err := database.Audit(ctx, tx, "student", it.StudentID, "test_added", nil, map[string]any{"test_id": id, "test_type_id": req.TestTypeID, "percent": c.percent}); err != nil {
 				return err
 			}
 			ids = append(ids, id)
@@ -739,6 +734,128 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return httpx.Created(w, map[string]any{"ids": ids})
+}
+
+// ---------------------------------------------------------------- тесты на уроке
+
+// LessonTest — тест, который вводится при отметке занятия, с уже сохранёнными баллами учеников.
+type LessonTest struct {
+	Type
+	Required bool `json:"required"`
+}
+
+// LessonEntry — баллы ученика за урок: student_id → test_type_id → skill_id → балл или оценка.
+type LessonEntry struct {
+	StudentID  string    `json:"student_id"`
+	TestTypeID string    `json:"test_type_id"`
+	Scores     []ScoreIn `json:"scores"`
+}
+
+// ForLesson возвращает тесты урока (по курсу группы), шкалу оценок и введённые баллы.
+func ForLesson(ctx context.Context, tx pgx.Tx, lessonID, courseID string) (tests []LessonTest, grades []Grade, entries []LessonEntry, err error) {
+	cfg, err := LoadConfig(ctx, tx, false, true)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	tests = []LessonTest{}
+	for _, t := range cfg.Types {
+		if len(t.CourseIDs) == 0 || slices.Contains(t.CourseIDs, courseID) {
+			tests = append(tests, LessonTest{Type: t, Required: t.LessonMode == "required"})
+		}
+	}
+	entries = []LessonEntry{}
+	rows, err := tx.Query(ctx, `SELECT st.student_id::text, st.test_type_id::text, sc.skill_id::text, sc.score::float8, sc.grade_id::text
+		FROM student_tests st JOIN student_test_scores sc ON sc.test_id=st.id WHERE st.lesson_id=$1 ORDER BY 1, 2`, lessonID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer rows.Close()
+	idx := map[string]int{}
+	for rows.Next() {
+		var sid, tid string
+		var s ScoreIn
+		if err := rows.Scan(&sid, &tid, &s.SkillID, &s.Score, &s.GradeID); err != nil {
+			return nil, nil, nil, err
+		}
+		k := sid + "|" + tid
+		i, ok := idx[k]
+		if !ok {
+			i = len(entries)
+			idx[k] = i
+			entries = append(entries, LessonEntry{StudentID: sid, TestTypeID: tid})
+		}
+		entries[i].Scores = append(entries[i].Scores, s)
+	}
+	return tests, cfg.Grades, entries, rows.Err()
+}
+
+// SaveLesson заменяет результаты тестов урока. present — ученики, пришедшие на урок; при закрытии
+// по ним проверяется заполнение обязательных тестов. Возвращает id учеников с результатами.
+func SaveLesson(ctx context.Context, tx pgx.Tx, lessonID, groupID, courseID, takenOn string, teacherID *string, userID string,
+	entries []LessonEntry, present map[string]bool, enforceRequired bool) error {
+	tests, _, _, err := ForLesson(ctx, tx, lessonID, courseID)
+	if err != nil {
+		return err
+	}
+	allowed := map[string]LessonTest{}
+	for _, t := range tests {
+		allowed[t.ID] = t
+	}
+	scorers := map[string]*scorer{}
+	filledBy := map[string]bool{} // student|type
+	type result struct {
+		e LessonEntry
+		c computed
+	}
+	var results []result
+	for i, e := range entries {
+		if _, ok := allowed[e.TestTypeID]; !ok {
+			return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "tests." + strconv.Itoa(i) + ".test_type_id", Code: "INVALID_OPTION"}}}).Err()
+		}
+		if !present[e.StudentID] {
+			continue // отсутствующим баллы не ставятся
+		}
+		sc := scorers[e.TestTypeID]
+		if sc == nil {
+			if sc, err = loadScorer(ctx, tx, e.TestTypeID); err != nil {
+				return err
+			}
+			scorers[e.TestTypeID] = sc
+		}
+		c, filled, field, code := sc.compute(e.Scores, nil)
+		if code != "" {
+			return (&httpx.Validation{Fields: []httpx.FieldError{{Field: "tests." + strconv.Itoa(i) + "." + field, Code: code}}}).Err()
+		}
+		if filled == 0 {
+			continue
+		}
+		filledBy[e.StudentID+"|"+e.TestTypeID] = true
+		results = append(results, result{e, c})
+	}
+	if enforceRequired {
+		missing := 0
+		for sid := range present {
+			for _, t := range tests {
+				if t.Required && !filledBy[sid+"|"+t.ID] {
+					missing++
+				}
+			}
+		}
+		if missing > 0 {
+			return httpx.NewError(422, "LESSON_TESTS_REQUIRED", "Заполните обязательные тесты у всех пришедших учеников (не заполнено: "+strconv.Itoa(missing)+")")
+		}
+	}
+	// результаты урока пересохраняются целиком: так снятый балл удаляется, а исправленный — заменяется
+	if _, err := tx.Exec(ctx, `DELETE FROM student_tests WHERE lesson_id=$1`, lessonID); err != nil {
+		return err
+	}
+	for _, r := range results {
+		gid, lid := groupID, lessonID
+		if _, err := insertResult(ctx, tx, r.e.StudentID, r.e.TestTypeID, &gid, &lid, teacherID, takenOn, r.c, nil, userID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // remove: администратор — любой результат своего филиала; преподаватель — только внесённый им самим.
@@ -833,6 +950,7 @@ type Result struct {
 	TestType   string     `json:"test_type"`
 	Scoring    string     `json:"scoring"`
 	Group      *string    `json:"group"`
+	LessonID   *string    `json:"lesson_id"`
 	Teacher    *string    `json:"teacher"`
 	TotalScore *float64   `json:"total_score"`
 	MaxScore   *float64   `json:"max_score"`
@@ -847,7 +965,7 @@ type Result struct {
 // LoadResults — результаты тестов с баллами по навыкам. where использует алиасы st (student_tests), s (students), g (groups).
 func LoadResults(ctx context.Context, tx pgx.Tx, where string, args []any, limit int) ([]Result, error) {
 	out := []Result{}
-	rows, err := tx.Query(ctx, `SELECT st.id::text, to_char(st.taken_on, 'YYYY-MM-DD'), s.id::text, s.full_name, t.id::text, t.name, t.scoring, g.name, e.full_name,
+	rows, err := tx.Query(ctx, `SELECT st.id::text, to_char(st.taken_on, 'YYYY-MM-DD'), s.id::text, s.full_name, t.id::text, t.name, t.scoring, g.name, st.lesson_id::text, e.full_name,
 			st.total_score::float8, st.max_score::float8, st.percent::float8, gr.id::text, gr.name, gr.color, st.comment, st.created_by::text, st.created_at
 		FROM student_tests st JOIN students s ON s.id=st.student_id JOIN test_types t ON t.id=st.test_type_id
 		LEFT JOIN groups g ON g.id=st.group_id LEFT JOIN employees e ON e.id=st.teacher_id LEFT JOIN test_grades gr ON gr.id=st.grade_id
@@ -860,7 +978,7 @@ func LoadResults(ctx context.Context, tx pgx.Tx, where string, args []any, limit
 	for rows.Next() {
 		res := Result{Scores: []ScoreOut{}}
 		var gID, gName, gColor *string
-		if err := rows.Scan(&res.ID, &res.TakenOn, &res.StudentID, &res.Student, &res.TestTypeID, &res.TestType, &res.Scoring, &res.Group, &res.Teacher,
+		if err := rows.Scan(&res.ID, &res.TakenOn, &res.StudentID, &res.Student, &res.TestTypeID, &res.TestType, &res.Scoring, &res.Group, &res.LessonID, &res.Teacher,
 			&res.TotalScore, &res.MaxScore, &res.Percent, &gID, &gName, &gColor, &res.Comment, &res.CreatedBy, &res.CreatedAt); err != nil {
 			rows.Close()
 			return nil, err

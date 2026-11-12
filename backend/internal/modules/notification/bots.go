@@ -82,7 +82,7 @@ func (w *Worker) botFor(botID *int64) (bot, bool) {
 
 var notifyKind = map[string]string{
 	"attendance.marked": "attendance", "lesson.cancelled": "lessons", "lesson.rescheduled": "lessons",
-	"subscription.expiring": "subscription", "payment.completed": "payment",
+	"subscription.expiring": "subscription", "payment.completed": "payment", "lesson.report": "homework",
 }
 
 func (w *Worker) notifyEnabled(ctx context.Context, tenantID, eventType string) bool {

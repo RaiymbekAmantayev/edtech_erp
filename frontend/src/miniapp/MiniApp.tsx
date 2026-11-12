@@ -1,13 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Route, Routes, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BarChart3, CalendarDays, CheckSquare, CircleUser, ClipboardList, GraduationCap, History, Wallet } from 'lucide-react'
+import { BarChart3, BookOpen, CalendarDays, CircleUser, ClipboardList, GraduationCap, History, NotebookPen, Wallet, X } from 'lucide-react'
 import { ApiError, api, setToken } from '../lib/api'
 import { date, dateShort, dayMonth, money, plural, time } from '../lib/format'
 import { Avatar, Badge, Spinner, attendanceStatus, cx, type Tone } from '../components/ui'
 import AttendanceMark from '../pages/AttendanceMark'
-import { gradeStyle, num, useTeacherTestConfig } from '../lib/tests'
-import { TeacherTestsTab, TestEntry } from './TeacherTests'
+import { gradeStyle, num, type TestResult } from '../lib/tests'
 import { hasPortalToken, loadTelegram, portal, setPortalToken, type Lesson, type Overview, type PortalMe, type TeacherCabinet } from './portal'
 
 type Session = { kind: 'student' | 'parent' | 'staff' }
@@ -60,7 +59,6 @@ export default function MiniApp() {
   return (
     <Routes>
       <Route path="lesson/:lessonId" element={<AttendanceMark />} />
-      {session.kind === 'staff' && <Route path="test/:groupId" element={<TestEntry />} />}
       <Route path="*" element={session.kind === 'staff' ? <TeacherHome /> : <PortalHome onLogout={logout} />} />
     </Routes>
   )
@@ -201,6 +199,7 @@ function PortalHome({ onLogout }: { onLogout: () => void }) {
   const me = useQuery({ queryKey: ['portal-me'], queryFn: () => portal<PortalMe>('GET', '/portal/me') })
   const [child, setChild] = useState('')
   const [tab, setTab] = useState<'schedule' | 'attendance' | 'tests' | 'payments' | 'profile'>('schedule')
+  const [lesson, setLesson] = useState<Overview['attendance'][number] | null>(null)
   const childId = child || me.data?.children[0]?.id || ''
   const ov = useQuery({ queryKey: ['portal-overview', childId], queryFn: () => portal<Overview>('GET', '/portal/students/' + childId), enabled: !!childId })
   if (me.isError) return <Center><div>Сессия истекла. <button className="font-semibold text-brand-600" onClick={onLogout}>Войти снова</button></div></Center>
@@ -209,7 +208,7 @@ function PortalHome({ onLogout }: { onLogout: () => void }) {
   const o = ov.data
   const tabs: Tab<typeof tab>[] = [
     { id: 'schedule', label: 'Расписание', icon: <CalendarDays className="size-5" /> },
-    { id: 'attendance', label: 'Посещаемость', icon: <CheckSquare className="size-5" /> },
+    { id: 'attendance', label: 'Уроки', icon: <NotebookPen className="size-5" /> },
     ...(o?.tests?.length ? [{ id: 'tests' as const, label: 'Тесты', icon: <GraduationCap className="size-5" /> }] : []),
     { id: 'payments', label: 'Оплата', icon: <Wallet className="size-5" /> },
     { id: 'profile', label: 'Профиль', icon: <CircleUser className="size-5" /> },
@@ -229,43 +228,57 @@ function PortalHome({ onLogout }: { onLogout: () => void }) {
             {tab === 'schedule' && o && (
               <>
                 {m.kind === 'parent' && <div className="mb-3 px-1 text-[15px] font-semibold">{o.profile.full_name}</div>}
+                <LastHomework o={o} onOpen={setLesson} />
                 <Schedule lessons={o.upcoming} showTeacher empty="Занятий на ближайшие две недели нет" />
               </>
             )}
-            {tab === 'attendance' && o && <Attendance o={o} />}
+            {tab === 'attendance' && o && <Attendance o={o} onOpen={setLesson} />}
             {tab === 'tests' && o && <Tests o={o} />}
             {tab === 'payments' && o && <Payments o={o} />}
             {tab === 'profile' && <Profile me={m} o={o} onLogout={onLogout} />}
           </>
         )}
+      {lesson && o && <LessonSheet l={lesson} results={o.tests.filter((r) => r.lesson_id === lesson.lesson_id)} onClose={() => setLesson(null)} />}
     </Shell>
   )
 }
 
-function Attendance({ o }: { o: Overview }) {
+type PastLesson = Overview['attendance'][number]
+
+function Attendance({ o, onOpen }: { o: Overview; onOpen: (l: PastLesson) => void }) {
   const s = o.attendance_90d
   const total = Object.values(s).reduce((a, b) => a + b, 0)
   const came = (s.present ?? 0) + (s.late ?? 0) + (s.trial ?? 0)
   return (
     <>
-      <Section title="За 90 дней">
+      <Section title="Посещаемость за 90 дней">
         <div className="grid grid-cols-3 gap-2">
           <Tile label="Посещаемость" value={total ? `${Math.round((came / total) * 100)}%` : '—'} tone={total && came / total < 0.7 ? 'red' : 'green'} />
           <Tile label="Пропуски" value={s.absent ?? 0} tone={s.absent ? 'red' : undefined} />
           <Tile label="Опоздания" value={s.late ?? 0} />
         </div>
       </Section>
-      <Section title="Последние занятия">
+      <Section title="Последние уроки">
         {o.attendance.length === 0 ? <Empty>Отметок пока нет</Empty> : (
           <Box className="divide-y divide-line !p-0">
-            {o.attendance.map((a, i) => {
+            {o.attendance.map((a) => {
               const [l, , t] = attendanceStatus[a.status] ?? [a.status, '', 'gray']
+              const res = o.tests.filter((r) => r.lesson_id === a.lesson_id)
               return (
-                <div key={i} className="flex items-center gap-3 px-4 py-3">
-                  <div className="w-12 shrink-0 text-[13px] text-muted tabular">{dateShort(a.starts_at)}</div>
-                  <div className="min-w-0 flex-1"><div className="truncate text-[15px]">{a.group}</div>{a.topic && <div className="truncate text-[12px] text-muted">{a.topic}</div>}</div>
+                <button key={a.lesson_id} onClick={() => onOpen(a)} className="flex w-full items-start gap-3 px-4 py-3 text-left active:bg-gray-50">
+                  <div className="w-12 shrink-0 pt-0.5 text-[13px] text-muted tabular">{dateShort(a.starts_at)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px]">{a.group}</div>
+                    {a.topic && <div className="truncate text-[12px] text-muted">{a.topic}</div>}
+                    {(a.homework || res.length > 0) && (
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {a.homework && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">ДЗ</span>}
+                        {res.map((r) => <span key={r.id} className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold" style={gradeStyle(r.grade?.color)}>{r.percent != null ? `${num(r.percent)}%` : r.grade?.name ?? r.test_type}</span>)}
+                      </div>
+                    )}
+                  </div>
                   <Badge tone={t as Tone}>{l}</Badge>
-                </div>
+                </button>
               )
             })}
           </Box>
@@ -275,11 +288,55 @@ function Attendance({ o }: { o: Overview }) {
   )
 }
 
-function Tests({ o }: { o: Overview }) {
+// Последнее домашнее задание — первым на главном экране.
+function LastHomework({ o, onOpen }: { o: Overview; onOpen: (l: PastLesson) => void }) {
+  const l = o.attendance.find((a) => a.homework)
+  if (!l) return null
   return (
-    <div className="space-y-2">
-      {o.tests.map((r) => (
-        <Box key={r.id}>
+    <Section title="Домашнее задание">
+      <Box onClick={() => onOpen(l)} className="border-amber-200 bg-amber-50/60">
+        <div className="text-[13px] text-muted">{l.group} · {dateShort(l.starts_at)}{l.topic && ` · ${l.topic}`}</div>
+        <div className="mt-1 whitespace-pre-line text-[15px]">{l.homework}</div>
+      </Box>
+    </Section>
+  )
+}
+
+// Экран урока: тема, ДЗ, отметка и результаты тестов ученика.
+function LessonSheet({ l, results, onClose }: { l: PastLesson; results: TestResult[]; onClose: () => void }) {
+  const [label, , tone] = attendanceStatus[l.status] ?? [l.status, '', 'gray']
+  return (
+    <div className="fixed inset-0 z-50 flex justify-center bg-page">
+      <div className="flex h-full w-full max-w-xl flex-col">
+        <header className="flex items-start gap-3 border-b border-line bg-white px-4 pb-3 pt-4">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xl font-bold">{l.group}</div>
+            <div className="text-sm text-muted first-letter:uppercase">{dayMonth(new Date(l.starts_at))}, {time(l.starts_at)}{l.teacher && ` · ${l.teacher}`}</div>
+          </div>
+          <button onClick={onClose} className="flex size-10 items-center justify-center rounded-full hover:bg-gray-100" aria-label="Закрыть"><X className="size-5" /></button>
+        </header>
+        <main className="flex-1 space-y-4 overflow-y-auto p-4">
+          <Box className="flex items-center justify-between"><span className="text-[15px]">Отметка</span><Badge tone={tone as Tone}>{label}</Badge></Box>
+          <Section title="Тема урока"><Box className="flex gap-3 text-[15px]"><BookOpen className="mt-0.5 size-4 shrink-0 text-brand-600" />{l.topic ?? <span className="text-muted">Не указана</span>}</Box></Section>
+          <Section title="Домашнее задание">
+            <Box className={cx('whitespace-pre-line text-[15px]', l.homework && 'border-amber-200 bg-amber-50/60')}>{l.homework ?? <span className="text-muted">Не задано</span>}</Box>
+          </Section>
+          <Section title="Результаты за урок">
+            {results.length === 0 ? <Empty>Баллов за этот урок нет</Empty> : <div className="space-y-2">{results.map((r) => <ResultCard key={r.id} r={r} />)}</div>}
+          </Section>
+        </main>
+      </div>
+    </div>
+  )
+}
+
+function Tests({ o }: { o: Overview }) {
+  return <div className="space-y-2">{o.tests.map((r) => <ResultCard key={r.id} r={r} />)}</div>
+}
+
+function ResultCard({ r }: { r: TestResult }) {
+  return (
+        <Box>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[15px] font-semibold">{r.test_type}</div>
@@ -302,8 +359,6 @@ function Tests({ o }: { o: Overview }) {
           )}
           {r.comment && <div className="mt-3 rounded-xl bg-gray-50 p-3 text-[14px]">{r.comment}</div>}
         </Box>
-      ))}
-    </div>
   )
 }
 
@@ -391,9 +446,8 @@ function PasswordForm() {
 function TeacherHome() {
   const nav = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'schedule' | 'mark' | 'tests' | 'history' | 'profile'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'mark' | 'history' | 'profile'>('schedule')
   const q = useQuery({ queryKey: ['teacher-cabinet'], queryFn: () => api.get<TeacherCabinet>('/teacher/cabinet') })
-  const tests = useTeacherTestConfig()
   useEffect(() => { qc.invalidateQueries({ queryKey: ['teacher-cabinet'] }) }, [qc])
   if (q.isError) return <Center><div>{(q.error as Error).message}</div></Center>
   if (!q.data) return <Spinner className="h-full" />
@@ -402,7 +456,6 @@ function TeacherHome() {
   const tabs: Tab<typeof tab>[] = [
     { id: 'schedule', label: 'Расписание', icon: <CalendarDays className="size-5" /> },
     { id: 'mark', label: 'Отметить', icon: <ClipboardList className="size-5" />, badge: to_mark.length },
-    ...(tests.data?.types.length ? [{ id: 'tests' as const, label: 'Тесты', icon: <GraduationCap className="size-5" /> }] : []),
     { id: 'history', label: 'Проведённые', icon: <History className="size-5" /> },
     { id: 'profile', label: 'Профиль', icon: <BarChart3 className="size-5" /> },
   ]
@@ -412,7 +465,7 @@ function TeacherHome() {
         <>
           {to_mark.length > 0 && (
             <button onClick={() => setTab('mark')} className="mb-4 w-full rounded-2xl bg-red-50 p-4 text-left text-[14px] text-red-900">
-              <b>{to_mark.length} {plural(to_mark.length, 'занятие', 'занятия', 'занятий')}</b> без отметки посещаемости — отметьте учеников.
+              <b>{to_mark.length} {plural(to_mark.length, 'занятие', 'занятия', 'занятий')}</b> без отметки — отметьте посещаемость, тему, ДЗ и баллы.
             </button>
           )}
           <Schedule lessons={schedule} onOpen={open} empty="На ближайшую неделю занятий нет" />
@@ -421,7 +474,6 @@ function TeacherHome() {
       {tab === 'mark' && (to_mark.length === 0 ? <Empty>Все прошедшие занятия отмечены</Empty> : (
         <Section title="Требуют отметки"><div className="space-y-2">{to_mark.map((l) => <LessonCard key={l.id} l={l} onClick={() => open(l)} />)}</div></Section>
       ))}
-      {tab === 'tests' && <TeacherTestsTab />}
       {tab === 'history' && (conducted.length === 0 ? <Empty>Проведённых занятий пока нет</Empty> : (
         <Section title="Последние проведённые">
           <Box className="divide-y divide-line !p-0">

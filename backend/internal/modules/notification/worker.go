@@ -196,6 +196,9 @@ func (w *Worker) handle(ctx context.Context, e event) error {
 			return err
 		}
 		studentIDs, _ = pgx.CollectRows(rows, pgx.RowTo[string])
+	case "lesson.report":
+		text = w.lessonReport(ctx, loc, str("lesson_id"), str("student_id"))
+		studentIDs = []string{str("student_id")}
 	case "subscription.expiring":
 		var name, sub string
 		w.DB.Sys.QueryRow(ctx, `SELECT s.full_name, sb.name FROM subscriptions sb JOIN students s ON s.id=sb.student_id WHERE sb.id=$1`, str("subscription_id")).Scan(&name, &sub)
@@ -310,3 +313,92 @@ func Money(tiyn int64) string {
 	return out
 }
 
+// lessonReport — итог урока для родителей: тема, ДЗ и результаты тестов ребёнка. Пусто — уведомлять не о чем.
+func (w *Worker) lessonReport(ctx context.Context, loc *time.Location, lessonID, studentID string) string {
+	var name, group string
+	var topic, homework, status *string
+	var starts time.Time
+	if err := w.DB.Sys.QueryRow(ctx, `SELECT s.full_name, g.name, l.starts_at, l.topic, l.homework,
+			(SELECT a.status FROM attendance a WHERE a.lesson_id=l.id AND a.student_id=s.id)
+		FROM lessons l JOIN groups g ON g.id=l.group_id, students s WHERE l.id=$1 AND s.id=$2`, lessonID, studentID).
+		Scan(&name, &group, &starts, &topic, &homework, &status); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	rows, err := w.DB.Sys.Query(ctx, `SELECT st.id::text, t.name, st.total_score::float8, st.max_score::float8, st.percent::float8, gr.name
+		FROM student_tests st JOIN test_types t ON t.id=st.test_type_id LEFT JOIN test_grades gr ON gr.id=st.grade_id
+		WHERE st.lesson_id=$1 AND st.student_id=$2 ORDER BY t.sort_order, t.name`, lessonID, studentID)
+	if err == nil {
+		type res struct {
+			id, name            string
+			total, max, percent *float64
+			grade               *string
+		}
+		var list []res
+		for rows.Next() {
+			var r res
+			if rows.Scan(&r.id, &r.name, &r.total, &r.max, &r.percent, &r.grade) == nil {
+				list = append(list, r)
+			}
+		}
+		rows.Close()
+		for _, r := range list {
+			b.WriteString("\n• " + r.name)
+			if r.percent != nil {
+				b.WriteString(fmt.Sprintf(": %s из %s (%s%%)", num(*r.total), num(*r.max), num(*r.percent)))
+			}
+			if r.grade != nil {
+				b.WriteString(" — " + *r.grade)
+			}
+			var parts []string
+			srows, err := w.DB.Sys.Query(ctx, `SELECT sk.name, sc.score::float8, sc.max_score::float8, gr.name FROM student_test_scores sc
+				JOIN test_skills sk ON sk.id=sc.skill_id LEFT JOIN test_grades gr ON gr.id=sc.grade_id
+				LEFT JOIN test_type_skills ts ON ts.skill_id=sc.skill_id AND ts.test_type_id=(SELECT test_type_id FROM student_tests WHERE id=$1)
+				WHERE sc.test_id=$1 ORDER BY ts.sort_order NULLS LAST, sk.name`, r.id)
+			if err == nil {
+				for srows.Next() {
+					var skill string
+					var sc, mx *float64
+					var gr *string
+					if srows.Scan(&skill, &sc, &mx, &gr) != nil {
+						continue
+					}
+					if gr != nil {
+						parts = append(parts, skill+" "+*gr)
+					} else if sc != nil && mx != nil {
+						parts = append(parts, fmt.Sprintf("%s %s/%s", skill, num(*sc), num(*mx)))
+					}
+				}
+				srows.Close()
+			}
+			if len(parts) > 1 {
+				b.WriteString("\n   " + strings.Join(parts, " · "))
+			}
+		}
+	}
+	results := b.String()
+	if topic == nil && homework == nil && results == "" {
+		return ""
+	}
+	text := fmt.Sprintf("📘 Урок «%s», %s — %s", group, starts.In(loc).Format("02.01 15:04"), name)
+	if status != nil && *status == "absent" {
+		text += "\nНа уроке не был(а)."
+	}
+	if topic != nil {
+		text += "\nТема: " + *topic
+	}
+	if homework != nil {
+		text += "\n📝 ДЗ: " + *homework
+	}
+	if results != "" {
+		text += "\n\nРезультаты:" + results
+	}
+	return text
+}
+
+func num(f float64) string {
+	if f == float64(int64(f)) {
+		return fmt.Sprintf("%d", int64(f))
+	}
+	return strings.Replace(fmt.Sprintf("%.1f", f), ".", ",", 1)
+}
