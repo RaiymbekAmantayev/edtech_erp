@@ -215,7 +215,7 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request) error {
 		if status == "cancelled" {
 			return httpx.Conflict("LESSON_CANCELLED", "Занятие отменено")
 		}
-		if starts.After(time.Now().Add(30 * time.Minute)) {
+		if starts.After(time.Now().Add(30*time.Minute)) && (len(req.Items) > 0 || len(req.Tests) > 0 || req.Close) {
 			return httpx.Conflict("LESSON_NOT_STARTED", "Отметить посещаемость можно после начала занятия")
 		}
 		// редактирование закрытого занятия: в течение N часов — преподаватель, позже — только с правом и причиной (ТЗ 12.5)

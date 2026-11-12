@@ -73,6 +73,11 @@ export default function AttendanceMark() {
   const missing = (q.data?.tests ?? []).filter((t) => t.required).reduce((n, t) => n + presentIds.filter((sid) => !Object.values(scores[sid]?.[t.id] ?? {}).some((v) => v.trim())).length, 0)
   const over = (q.data?.tests ?? []).some((t) => t.scoring === 'score' && presentIds.some((sid) => t.skills.some((k) => Number((scores[sid]?.[t.id]?.[k.skill_id] ?? '').replace(',', '.')) > k.max_score)))
 
+  const plan = useMutation({
+    mutationFn: () => api.put(`/lessons/${lessonId}/attendance`, { items: [], topic, homework, ktp_topic_id: ktpId, close: false }),
+    onSuccess: () => { setSaved(true); qc.invalidateQueries(); setTimeout(() => nav(-1), 900) },
+    onError: (e) => setError(e instanceof ApiError ? e.message : 'Не удалось сохранить'),
+  })
   const save = useMutation({
     mutationFn: () => {
       const d = q.data!
@@ -100,7 +105,8 @@ export default function AttendanceMark() {
   const done = roster.filter((r) => marks[key(r)]).length
   const left = total - done
   const notStarted = new Date(lesson.starts_at).getTime() > Date.now() + 30 * 60e3
-  const disabled = !editable || notStarted
+  const disabled = !editable || notStarted // посещаемость и баллы — только после начала
+  const planOnly = editable && notStarted // тему и ДЗ можно подготовить заранее
   const topics = ktp.categories.find((c) => c.id === cat)?.topics ?? []
   const chooseTopic = (id: string) => {
     setKtpId(id)
@@ -126,7 +132,7 @@ export default function AttendanceMark() {
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-brand-600 transition-all" style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div>
           <span className="text-sm font-semibold tabular">{done} из {total}</span>
         </div>
-        {editable && left > 0 && (
+        {editable && !notStarted && left > 0 && (
           <button onClick={() => { const m = { ...marks }; roster.forEach((r) => { if (!m[key(r)]) m[key(r)] = 'present' }); setMarks(m) }}
             className="mt-3 h-12 w-full rounded-xl border border-brand-200 bg-brand-50 text-[15px] font-semibold text-brand-700 active:bg-brand-100">
             Отметить остальных «Был»
@@ -135,7 +141,7 @@ export default function AttendanceMark() {
       </header>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {notStarted && <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Отметить урок можно после начала занятия.</div>}
+        {notStarted && <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Занятие ещё не началось: тему и ДЗ можно подготовить заранее, посещаемость и баллы — после начала.</div>}
         {!editable && <div className="rounded-xl bg-gray-100 p-4 text-sm text-gray-700">Срок редактирования истёк. Изменить отметки может администратор с правом «Изменение закрытой посещаемости».</div>}
 
         <section className="space-y-3 rounded-2xl border border-line bg-white p-4">
@@ -145,14 +151,14 @@ export default function AttendanceMark() {
               {ktp.categories.length > 1 && (
                 <div className="-mx-1 flex gap-2 overflow-x-auto px-1">
                   {ktp.categories.map((c) => (
-                    <button key={c.id} disabled={disabled} onClick={() => setCat(c.id)}
+                    <button key={c.id} disabled={!editable} onClick={() => setCat(c.id)}
                       className={cx('h-9 shrink-0 rounded-full border px-3 text-[13px] font-medium', c.id === cat ? 'border-brand-600 bg-brand-600 text-white' : 'border-line')}>{c.name}</button>
                   ))}
                 </div>
               )}
               <label className="block">
                 <span className="mb-1 block text-[12px] text-muted">Тема по КТП</span>
-                <select value={topics.some((t) => t.id === ktpId) ? ktpId : ''} disabled={disabled} onChange={(e) => chooseTopic(e.target.value)} className={cx(field, 'h-12')}>
+                <select value={topics.some((t) => t.id === ktpId) ? ktpId : ''} disabled={!editable} onChange={(e) => chooseTopic(e.target.value)} className={cx(field, 'h-12')}>
                   <option value="">— вне плана —</option>
                   {topics.map((t) => <option key={t.id} value={t.id}>{t.done && t.id !== lesson.ktp_topic_id ? '✓ ' : ''}{t.number}. {t.title}{t.id === ktp.suggested_topic_id ? ' — по плану' : ''}</option>)}
                 </select>
@@ -161,11 +167,11 @@ export default function AttendanceMark() {
           )}
           <label className="block">
             <span className="mb-1 block text-[12px] text-muted">Тема урока</span>
-            <input value={topic} onChange={(e) => setTopic(e.target.value)} disabled={disabled} placeholder="Необязательно" className={cx(field, 'h-12')} />
+            <input value={topic} onChange={(e) => setTopic(e.target.value)} disabled={!editable} placeholder="Необязательно" className={cx(field, 'h-12')} />
           </label>
           <label className="block">
             <span className="mb-1 block text-[12px] text-muted">Домашнее задание — придёт родителям</span>
-            <textarea value={homework} onChange={(e) => setHomework(e.target.value)} disabled={disabled} rows={3} placeholder="Без ДЗ" className={cx(field, 'py-2.5')} />
+            <textarea value={homework} onChange={(e) => setHomework(e.target.value)} disabled={!editable} rows={3} placeholder="Без ДЗ" className={cx(field, 'py-2.5')} />
           </label>
         </section>
 
@@ -212,10 +218,17 @@ export default function AttendanceMark() {
             className="h-12 w-full rounded-xl border border-amber-300 px-4 text-[15px] outline-none" />
         )}
         {error && <div className="text-sm text-red-700">{error}</div>}
+        {planOnly ? (
+          <button disabled={plan.isPending || saved} onClick={() => { setError(''); plan.mutate() }}
+            className={cx('h-14 w-full rounded-xl text-[17px] font-semibold text-white transition-colors', saved ? 'bg-green-600' : 'bg-brand-600 active:bg-brand-700')}>
+            {saved ? 'Сохранено ✓' : plan.isPending ? 'Сохранение…' : 'Сохранить тему и ДЗ'}
+          </button>
+        ) : (
         <button disabled={disabled || !!blocked || save.isPending} onClick={() => { setError(''); save.mutate() }}
           className={cx('h-14 w-full rounded-xl text-[17px] font-semibold text-white transition-colors', saved ? 'bg-green-600' : blocked ? 'bg-gray-500' : 'bg-brand-600 active:bg-brand-700')}>
           {saved ? 'Сохранено ✓' : blocked ? `Сохранить · ${blocked}` : save.isPending ? 'Сохранение…' : lesson.status === 'done' ? 'Сохранить изменения' : 'Сохранить и закрыть занятие'}
         </button>
+        )}
       </footer>
     </div>
   )
